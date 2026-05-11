@@ -1,0 +1,246 @@
+﻿
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using OnlineEvaluation.Api.Data;
+using OnlineEvaluation.Api.Models;
+using OnlineEvaluation.Api.Models.DTO;
+using OnlineEvaluation.Api.Models.Entities;
+using OnlineEvaluation.Api.Services.Helpers;
+using OnlineEvaluation.Api.Services.IServices;
+
+namespace OnlineEvaluation.Api.Services
+{
+    public class AuthService :IAuthService
+    {
+        private readonly UserManager<ApplicationUser> _userManager;
+        private readonly RoleManager<IdentityRole> _rolerManager;
+        private readonly ITokenService _tokenService;
+        private readonly ApplicationDbContext _db;
+        private readonly IEmailService _emailService;
+        private readonly IConfiguration _config;
+        private readonly string _refeshTokenHashKey;
+
+        public AuthService(
+            UserManager<ApplicationUser> userManager,
+            RoleManager<IdentityRole> roleManger,
+            ITokenService tokenService,
+            ApplicationDbContext db,
+            IEmailService emailService,
+            IConfiguration config)
+        {
+            _userManager = userManager;
+            _rolerManager = roleManger;
+            _tokenService = tokenService;
+            _db = db;
+            _emailService = emailService;
+            _config = config;
+
+            _refeshTokenHashKey = _config["Jwt:RefreshTokenHashKey"];
+        }
+
+        public async Task<RegisterResultDto> RegisterAsync(RegisterDto dto)
+        {
+            var existing = await _userManager.FindByEmailAsync(dto.Email);
+            if(existing != null)
+            {
+                return new RegisterResultDto(false, new[] { "Email already in use" });
+            }
+
+            var user = new ApplicationUser
+            {
+                UserName = dto.Email,
+                Email = dto.Email,
+                FullName = dto.FullName,
+                EmailConfirmed = true //allowing for now
+            };
+
+            var result = await _userManager.CreateAsync(user, dto.Password);
+            if (!result.Succeeded)
+            {
+                return new RegisterResultDto(false, result.Errors.Select(u => u.Description));
+            }
+
+            var defaultRole = "User";
+            if(!await _rolerManager.RoleExistsAsync(defaultRole))
+            {
+                await _rolerManager.CreateAsync(new IdentityRole(defaultRole));
+            }
+            if (!await _userManager.IsInRoleAsync(user, defaultRole))
+            {
+                await _userManager.AddToRoleAsync(user, defaultRole);
+            }
+
+            return new RegisterResultDto(true, Array.Empty<string>());
+        }
+
+        public async Task<AuthResponseDto> LoginAsync(LoginDto dto)
+        {
+            var user = await _userManager.FindByEmailAsync(dto.Email);
+
+            if(user == null)
+            {
+                throw new UnauthorizedAccessException("Invalid credentials");
+            }
+            if (!user.IsActive)
+            {
+                throw new UnauthorizedAccessException("User is inactive");
+            }
+            if(!await _userManager.CheckPasswordAsync(user, dto.Password))
+            {
+                throw new UnauthorizedAccessException("Invalid credentials");
+            }
+            if(_userManager.Options.SignIn.RequireConfirmedEmail && !user.EmailConfirmed)
+            {
+                throw new UnauthorizedAccessException("Email not confirmed");
+            }
+
+            var roles = await _userManager.GetRolesAsync(user);
+
+            var tokenResult = _tokenService.GenerateAccessToken(user, roles);
+
+            var refreshToken = _tokenService.GenerateRefreshToken();
+            var refreshTokenHash = TokenHelpers.ComputeHmacSha256Base64(refreshToken, _refeshTokenHashKey);
+            var expiry = DateTime.UtcNow.AddDays(Convert.ToDouble(_config["Jwt:RefreshTokenExpireDays"] ?? "30"));
+
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                // Revoke any existing active tokens for this user
+                var activeTokens = await _db.RefreshTokens
+                    .Where(t => t.UserId == user.Id && !t.Revoked && t.ExpiresAt > DateTime.UtcNow)
+                    .ToListAsync();
+
+                foreach (var t in activeTokens)
+                {
+                    t.Revoked = true;
+                    t.ReplacedByTokenHash = refreshTokenHash;
+                }
+
+                // Insert new token
+                var refreshTokenEntity = new RefreshToken
+                {
+                    TokenHash = refreshTokenHash,
+                    UserId = user.Id,
+                    ExpiresAt = expiry,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _db.RefreshTokens.Add(refreshTokenEntity);
+                await _db.SaveChangesAsync();
+
+                await tx.CommitAsync();
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+
+            return new AuthResponseDto
+            {
+                AccessToken = tokenResult.Token,
+                RefreshToken = refreshToken,
+                AccessTokenExpiresAt = tokenResult.ExpiresAtUtc
+            };
+        }
+
+        public async Task<AuthResponseDto> RefreshTokenAsync(string refreshToken)
+        {
+            var incomingHash = TokenHelpers.ComputeHmacSha256Base64(refreshToken, _refeshTokenHashKey);
+
+            var tokenEntity = await _db.RefreshTokens.Include(u => u.User)
+                                                      .FirstOrDefaultAsync(u => u.TokenHash == incomingHash);
+
+            if(tokenEntity == null || !tokenEntity.IsActive)
+            {
+                throw new UnauthorizedAccessException("Invalid refresh token");
+            }
+
+            if (tokenEntity.Revoked || tokenEntity.ExpiresAt <= DateTime.UtcNow)
+            {
+                // Revoke all tokens for this user as a security measure
+                var allTokens = await _db.RefreshTokens
+                    .Where(t => t.UserId == tokenEntity.UserId && !t.Revoked)
+                    .ToListAsync();
+
+                foreach (var t in allTokens) t.Revoked = true;
+
+                await _db.SaveChangesAsync();
+                throw new UnauthorizedAccessException("Invalid refresh token");
+            }
+
+            await using var tx = await _db.Database.BeginTransactionAsync();
+            try
+            {
+                tokenEntity.Revoked = true;
+
+                var newRefreshToken = _tokenService.GenerateRefreshToken();
+                var newRefreshTokenHash = TokenHelpers.ComputeHmacSha256Base64(newRefreshToken, _refeshTokenHashKey);
+
+                tokenEntity.ReplacedByTokenHash = newRefreshTokenHash;
+
+                var newTokenEntity = new RefreshToken
+                {
+                    TokenHash = newRefreshTokenHash,
+                    UserId = tokenEntity.UserId,
+                    ExpiresAt = DateTime.UtcNow.AddDays(Convert.ToDouble(_config["Jwt:RefreshTokenExpireDays"] ?? "30")),
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                _db.RefreshTokens.Add(newTokenEntity);
+                await _db.SaveChangesAsync();
+                await tx.CommitAsync();
+
+                var roles = await _userManager.GetRolesAsync(tokenEntity.User);
+                var accessToken = _tokenService.GenerateAccessToken(tokenEntity.User, roles);
+
+                return new AuthResponseDto
+                {
+                    AccessToken = accessToken.Token,
+                    RefreshToken = newRefreshToken,
+                    AccessTokenExpiresAt = accessToken.ExpiresAtUtc
+                };
+            }
+            catch
+            {
+                await tx.RollbackAsync();
+                throw;
+            }
+
+        }
+
+        public async Task<bool> RevokeRefreshTokenAsync(string refreshToken)
+        {
+            var incomingHash = TokenHelpers.ComputeHmacSha256Base64(refreshToken, _refeshTokenHashKey);
+            var tokenEntity = await _db.RefreshTokens.FirstOrDefaultAsync(u => u.TokenHash == incomingHash);
+            if (tokenEntity == null || tokenEntity.Revoked)
+            {
+                return false;
+            }
+            tokenEntity.Revoked = true;
+            await _db.SaveChangesAsync();
+            return true;
+        }
+
+        public Task<bool> ConfirmEmailAsync(string userId, string token)
+        {
+            // Implementation Pending
+            return Task.FromResult(false);
+        }
+
+        public Task<bool> ForgotPasswordAsync(string email)
+        {
+            // Implementation Pending
+            return Task.FromResult(false);
+        }
+
+
+        public Task<bool> ResetPasswordAsync(ResetPasswordDto dto)
+        {
+            // Implementation Pending
+            return Task.FromResult(false);
+        }
+
+        
+    }
+}
