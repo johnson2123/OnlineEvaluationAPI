@@ -1,14 +1,18 @@
 ﻿using AutoMapper;
+using FluentValidation;
+using OnlineEvaluation.Api.Validators;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using OnlineEvaluation.Api.Data;
+using OnlineEvaluation.Api.Mappings;
 using OnlineEvaluation.Api.Models;
 using OnlineEvaluation.Api.Seed;
 using OnlineEvaluation.Api.Services;
 using OnlineEvaluation.Api.Services.IServices;
 using System.Text;
+using FluentValidation.AspNetCore;
 
 namespace OnlineEvaluation.Api.Extensions
 {
@@ -31,7 +35,11 @@ namespace OnlineEvaluation.Api.Extensions
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddDefaultTokenProviders();
 
-            services.AddAutoMapper(cfg => { }, AppDomain.CurrentDomain.GetAssemblies());
+            //services.AddAutoMapper(cfg => { }, AppDomain.CurrentDomain.GetAssemblies());
+            services.AddAutoMapper(cfg => { }, typeof(UniversityProfile).Assembly);
+            services.AddValidatorsFromAssemblyContaining<CreateUniversityValidator>();
+            services.AddFluentValidationAutoValidation();
+
 
             var key = Encoding.UTF8.GetBytes(config["Jwt:Key"]);
             services.AddAuthentication(options =>
@@ -59,6 +67,7 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, EmailService>();
             services.AddScoped<DataSeeder>();
+            services.AddScoped<IUniversityService, UniversityService>();
 
             return services;
         }

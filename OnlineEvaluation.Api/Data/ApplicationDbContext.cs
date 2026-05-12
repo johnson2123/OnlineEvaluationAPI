@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using OnlineEvaluation.Api.Data.Configurations;
 using OnlineEvaluation.Api.Models;
 using OnlineEvaluation.Api.Models.Entities;
 
@@ -13,6 +14,7 @@ namespace OnlineEvaluation.Api.Data
         }
 
         public DbSet<RefreshToken> RefreshTokens { get; set; }
+        public DbSet<University> Universities { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -27,6 +29,8 @@ namespace OnlineEvaluation.Api.Data
                       .HasForeignKey(u => u.UserId)
                       .OnDelete(DeleteBehavior.Cascade);
             });
+
+            builder.ApplyConfiguration(new UniversityConfiguration());
         }
 
     }

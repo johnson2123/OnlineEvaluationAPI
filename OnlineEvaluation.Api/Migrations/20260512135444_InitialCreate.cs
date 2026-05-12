@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace OnlineEvaluation.Api.Migrations
 {
     /// <inheritdoc />
-    public partial class AuthInitial : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -50,6 +50,40 @@ namespace OnlineEvaluation.Api.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_AspNetUsers", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "Universities",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "int", nullable: false)
+                        .Annotation("SqlServer:Identity", "1, 1"),
+                    Guid = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Code = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    Name = table.Column<string>(type: "nvarchar(250)", maxLength: 250, nullable: false),
+                    DisplayName = table.Column<string>(type: "nvarchar(250)", maxLength: 250, nullable: true),
+                    Address = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    City = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: true),
+                    State = table.Column<string>(type: "nvarchar(150)", maxLength: 150, nullable: true),
+                    Country = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: true),
+                    PostalCode = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: true),
+                    ContactEmail = table.Column<string>(type: "nvarchar(254)", maxLength: 254, nullable: true),
+                    ContactPhone = table.Column<string>(type: "nvarchar(30)", maxLength: 30, nullable: true),
+                    WebsiteUrl = table.Column<string>(type: "nvarchar(500)", maxLength: 500, nullable: true),
+                    AccreditationBody = table.Column<string>(type: "nvarchar(200)", maxLength: 200, nullable: true),
+                    Status = table.Column<string>(type: "nvarchar(50)", maxLength: 50, nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
+                    CreatedByUserId = table.Column<string>(type: "nvarchar(450)", maxLength: 450, nullable: true),
+                    UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    UpdatedByUserId = table.Column<string>(type: "nvarchar(450)", maxLength: 450, nullable: true),
+                    IsDeleted = table.Column<bool>(type: "bit", nullable: false, defaultValue: false),
+                    DeletedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    DeletedByUserId = table.Column<string>(type: "nvarchar(450)", maxLength: 450, nullable: true),
+                    RowVersion = table.Column<byte[]>(type: "rowversion", rowVersion: true, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Universities", x => x.Id);
                 });
 
             migrationBuilder.CreateTable(
@@ -168,7 +202,7 @@ namespace OnlineEvaluation.Api.Migrations
                     ExpiresAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Revoked = table.Column<bool>(type: "bit", nullable: false),
-                    ReplacedByTokenHash = table.Column<string>(type: "nvarchar(max)", nullable: false)
+                    ReplacedByTokenHash = table.Column<string>(type: "nvarchar(512)", maxLength: 512, nullable: true)
                 },
                 constraints: table =>
                 {
@@ -230,6 +264,30 @@ namespace OnlineEvaluation.Api.Migrations
                 name: "IX_RefreshTokens_UserId",
                 table: "RefreshTokens",
                 column: "UserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Universities_Code",
+                table: "Universities",
+                column: "Code",
+                unique: true,
+                filter: "[IsDeleted] = 0");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Universities_Guid",
+                table: "Universities",
+                column: "Guid",
+                unique: true,
+                filter: "[IsDeleted] = 0");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Universities_IsDeleted_Status",
+                table: "Universities",
+                columns: new[] { "IsDeleted", "Status" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Universities_Name",
+                table: "Universities",
+                column: "Name");
         }
 
         /// <inheritdoc />
@@ -252,6 +310,9 @@ namespace OnlineEvaluation.Api.Migrations
 
             migrationBuilder.DropTable(
                 name: "RefreshTokens");
+
+            migrationBuilder.DropTable(
+                name: "Universities");
 
             migrationBuilder.DropTable(
                 name: "AspNetRoles");
