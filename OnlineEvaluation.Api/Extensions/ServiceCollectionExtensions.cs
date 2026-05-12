@@ -38,7 +38,10 @@ namespace OnlineEvaluation.Api.Extensions
             //services.AddAutoMapper(cfg => { }, AppDomain.CurrentDomain.GetAssemblies());
             services.AddAutoMapper(cfg => { }, typeof(UniversityProfile).Assembly);
             services.AddValidatorsFromAssemblyContaining<CreateUniversityValidator>();
+            services.AddValidatorsFromAssemblyContaining<CreateCollegeValidator>();
+            services.AddValidatorsFromAssemblyContaining<CreateCollegeValidator>();
             services.AddFluentValidationAutoValidation();
+            services.AddFluentValidationClientsideAdapters();
 
 
             var key = Encoding.UTF8.GetBytes(config["Jwt:Key"]);
@@ -68,6 +71,8 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<IEmailService, EmailService>();
             services.AddScoped<DataSeeder>();
             services.AddScoped<IUniversityService, UniversityService>();
+            services.AddScoped<ICollegeService, CollegeService>();
+            services.AddScoped<IStudyProgramService, StudyProgramService>();
 
             return services;
         }
