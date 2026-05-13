@@ -4,7 +4,7 @@ namespace OnlineEvaluation.Api.Services.IServices
 {
     public interface IBranchService
     {
-        
+       
         Task<IEnumerable<BranchDto>> GetAllAsync(int page, int pageSize);
         Task<BranchDto?> GetByCodeAsync(string code);
         Task<BranchDto?> GetByIdAsync(int id);

@@ -74,6 +74,7 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<ICollegeService, CollegeService>();
             services.AddScoped<IStudyProgramService, StudyProgramService>();
             services.AddScoped<IBranchService, BranchService>();
+            services.AddScoped<ISubjectService, SubjectService>();
 
             return services;
         }
