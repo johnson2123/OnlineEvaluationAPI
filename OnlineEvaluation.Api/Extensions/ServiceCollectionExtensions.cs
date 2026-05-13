@@ -36,7 +36,10 @@ namespace OnlineEvaluation.Api.Extensions
             .AddDefaultTokenProviders();
 
             //services.AddAutoMapper(cfg => { }, AppDomain.CurrentDomain.GetAssemblies());
-            services.AddAutoMapper(cfg => { }, typeof(UniversityProfile).Assembly);
+            services.AddAutoMapper(cfg =>
+            {
+                
+            }, new[] { typeof(UniversityProfile).Assembly });
             services.AddValidatorsFromAssemblyContaining<CreateUniversityValidator>();
             services.AddValidatorsFromAssemblyContaining<CreateCollegeValidator>();
             services.AddValidatorsFromAssemblyContaining<CreateBranchValidator>();
@@ -75,6 +78,7 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<IStudyProgramService, StudyProgramService>();
             services.AddScoped<IBranchService, BranchService>();
             services.AddScoped<ISubjectService, SubjectService>();
+            services.AddScoped<IAcademicMapService, AcademicMapService>();
 
             return services;
         }

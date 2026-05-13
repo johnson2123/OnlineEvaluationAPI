@@ -19,6 +19,7 @@ namespace OnlineEvaluation.Api.Data
         public DbSet<StudyProgram> StudyPrograms { get; set; }
         public DbSet<Branch> Branches { get; set; }
         public DbSet<Subject> Subjects { get; set; }
+        public DbSet<AcademicMap> AcademicMaps { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -39,6 +40,7 @@ namespace OnlineEvaluation.Api.Data
             builder.ApplyConfiguration(new StudyProgramConfiguration());
             builder.ApplyConfiguration(new BranchConfiguration());
             builder.ApplyConfiguration(new SubjectConfiguration());
+            builder.ApplyConfiguration(new AcademicMapConfiguration());
         }
 
     }
