@@ -39,7 +39,7 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddAutoMapper(cfg => { }, typeof(UniversityProfile).Assembly);
             services.AddValidatorsFromAssemblyContaining<CreateUniversityValidator>();
             services.AddValidatorsFromAssemblyContaining<CreateCollegeValidator>();
-            services.AddValidatorsFromAssemblyContaining<CreateCollegeValidator>();
+            services.AddValidatorsFromAssemblyContaining<CreateBranchValidator>();
             services.AddFluentValidationAutoValidation();
             services.AddFluentValidationClientsideAdapters();
 
@@ -73,6 +73,7 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<IUniversityService, UniversityService>();
             services.AddScoped<ICollegeService, CollegeService>();
             services.AddScoped<IStudyProgramService, StudyProgramService>();
+            services.AddScoped<IBranchService, BranchService>();
 
             return services;
         }
