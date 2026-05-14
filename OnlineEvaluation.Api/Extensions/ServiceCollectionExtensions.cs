@@ -13,6 +13,8 @@ using OnlineEvaluation.Api.Services;
 using OnlineEvaluation.Api.Services.IServices;
 using System.Text;
 using FluentValidation.AspNetCore;
+using Microsoft.IdentityModel.JsonWebTokens;
+using System.Security.Claims;
 
 namespace OnlineEvaluation.Api.Extensions
 {
@@ -65,7 +67,10 @@ namespace OnlineEvaluation.Api.Extensions
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = config["Jwt:Issuer"],
                     ValidAudience = config["Jwt:Audience"],
-                    IssuerSigningKey = new SymmetricSecurityKey(key)
+                    IssuerSigningKey = new SymmetricSecurityKey(key),
+
+                    RoleClaimType = ClaimTypes.Role,
+                    NameClaimType = ClaimTypes.NameIdentifier
                 };
             });
 

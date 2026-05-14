@@ -49,7 +49,7 @@ namespace OnlineEvaluation.Api.Controllers
             {
                 var authResponse = await _auth.LoginAsync(dto);
 
-                AppendRefreshTokenCookie(authResponse.RefreshToken, authResponse.AccessTokenExpiresAt);
+                AppendRefreshTokenCookie(authResponse.RefreshToken);
 
                 return Ok(new
                 {
@@ -74,7 +74,7 @@ namespace OnlineEvaluation.Api.Controllers
             {
                 var authResponse = await _auth.RefreshTokenAsync(refreshToken);
 
-                AppendRefreshTokenCookie(authResponse.RefreshToken, authResponse.AccessTokenExpiresAt);
+                AppendRefreshTokenCookie(authResponse.RefreshToken);
 
                 return Ok(new
                 {
@@ -93,33 +93,27 @@ namespace OnlineEvaluation.Api.Controllers
         [Authorize]
         public async Task<IActionResult> Revoke()
         {
-            if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken) || string.IsNullOrEmpty(refreshToken))
+           
+            if (Request.Cookies.TryGetValue("refreshToken", out var refreshToken) && !string.IsNullOrEmpty(refreshToken))
             {
-                return BadRequest(new { error = "Refresh token missing" });
-            }
-                
-            var success = await _auth.RevokeRefreshTokenAsync(refreshToken);
-
-            if (!success)
-            {
-                return NotFound(new { error = "Refresh token not found or already revoked" });
+                await _auth.RevokeRefreshTokenAsync(refreshToken);
             }
 
-            // Clear cookie
             RemoveRefreshTokenCookie();
 
-            return Ok(new { message = "Refresh token revoked and cookie cleared" });
+            return Ok(new { message = "Logged out successfully" });
         }
 
         // NEW: This centralizes the cookie creation logic so Login and Refresh use the exact same settings.
-        private void AppendRefreshTokenCookie(string token, DateTime accessTokenExpiresAt)
+        private void AppendRefreshTokenCookie(string token)
         {
+            var expiryMinutes = Convert.ToDouble(_configuration["Jwt:RefreshTokenExpireMinutes"] ?? "60");
             var cookieOptions = new CookieOptions
             {
                 HttpOnly = true,
                 Secure = true,
                 SameSite = SameSiteMode.None,
-                Expires = accessTokenExpiresAt.AddDays(Convert.ToDouble(_configuration["Jwt:RefreshTokenExpireDays"] ?? "30")),
+                Expires = DateTime.UtcNow.AddMinutes(expiryMinutes),
                 Path = "/"
             };
 
@@ -138,7 +132,7 @@ namespace OnlineEvaluation.Api.Controllers
                 Path = "/"
             };
 
-            Response.Cookies.Append("refreshToken", string.Empty, cookieOptions);
+            Response.Cookies.Delete("refreshToken", cookieOptions);
         }
 
 

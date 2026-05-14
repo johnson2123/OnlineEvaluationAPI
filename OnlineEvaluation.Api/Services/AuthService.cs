@@ -13,7 +13,7 @@ namespace OnlineEvaluation.Api.Services
     public class AuthService :IAuthService
     {
         private readonly UserManager<ApplicationUser> _userManager;
-        private readonly RoleManager<IdentityRole> _rolerManager;
+        private readonly RoleManager<IdentityRole> _roleManager;
         private readonly ITokenService _tokenService;
         private readonly ApplicationDbContext _db;
         private readonly IEmailService _emailService;
@@ -22,14 +22,14 @@ namespace OnlineEvaluation.Api.Services
 
         public AuthService(
             UserManager<ApplicationUser> userManager,
-            RoleManager<IdentityRole> roleManger,
+            RoleManager<IdentityRole> roleManager,
             ITokenService tokenService,
             ApplicationDbContext db,
             IEmailService emailService,
             IConfiguration config)
         {
             _userManager = userManager;
-            _rolerManager = roleManger;
+            _roleManager = roleManager;
             _tokenService = tokenService;
             _db = db;
             _emailService = emailService;
@@ -61,9 +61,9 @@ namespace OnlineEvaluation.Api.Services
             }
 
             var defaultRole = "User";
-            if(!await _rolerManager.RoleExistsAsync(defaultRole))
+            if(!await _roleManager.RoleExistsAsync(defaultRole))
             {
-                await _rolerManager.CreateAsync(new IdentityRole(defaultRole));
+                await _roleManager.CreateAsync(new IdentityRole(defaultRole));
             }
             if (!await _userManager.IsInRoleAsync(user, defaultRole))
             {
@@ -77,22 +77,15 @@ namespace OnlineEvaluation.Api.Services
         {
             var user = await _userManager.FindByEmailAsync(dto.Email);
 
-            if(user == null)
-            {
+            if (user == null) throw new UnauthorizedAccessException("Invalid credentials");
+
+            if (!user.IsActive) throw new UnauthorizedAccessException("User is inactive");
+
+            if (!await _userManager.CheckPasswordAsync(user, dto.Password))
                 throw new UnauthorizedAccessException("Invalid credentials");
-            }
-            if (!user.IsActive)
-            {
-                throw new UnauthorizedAccessException("User is inactive");
-            }
-            if(!await _userManager.CheckPasswordAsync(user, dto.Password))
-            {
-                throw new UnauthorizedAccessException("Invalid credentials");
-            }
-            if(_userManager.Options.SignIn.RequireConfirmedEmail && !user.EmailConfirmed)
-            {
+
+            if (_userManager.Options.SignIn.RequireConfirmedEmail && !user.EmailConfirmed)
                 throw new UnauthorizedAccessException("Email not confirmed");
-            }
 
             var roles = await _userManager.GetRolesAsync(user);
 
@@ -100,7 +93,7 @@ namespace OnlineEvaluation.Api.Services
 
             var refreshToken = _tokenService.GenerateRefreshToken();
             var refreshTokenHash = TokenHelpers.ComputeHmacSha256Base64(refreshToken, _refeshTokenHashKey);
-            var expiry = DateTime.UtcNow.AddDays(Convert.ToDouble(_config["Jwt:RefreshTokenExpireDays"] ?? "30"));
+            var expiry = DateTime.UtcNow.AddMinutes(Convert.ToDouble(_config["Jwt:RefreshTokenExpireMinutes"] ?? "60"));
 
             await using var tx = await _db.Database.BeginTransactionAsync();
             try
@@ -185,7 +178,7 @@ namespace OnlineEvaluation.Api.Services
             {
                 TokenHash = newRefreshTokenHash,
                 UserId = user.Id,
-                ExpiresAt = DateTime.UtcNow.AddDays(Convert.ToDouble(_config["Jwt:RefreshTokenExpireDays"] ?? "30")),
+                ExpiresAt = DateTime.UtcNow.AddMinutes(Convert.ToDouble(_config["Jwt:RefreshTokenExpireMinutes"] ?? "60")),
                 CreatedAt = DateTime.UtcNow
             };
 

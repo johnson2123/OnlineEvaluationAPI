@@ -107,8 +107,8 @@ namespace OnlineEvaluation.Api.Services
             if (entity == null) return false;
 
             entity.IsDeleted = true;
-            entity.UpdatedBy = actorUserId;
-            entity.UpdatedAt = DateTime.UtcNow;
+            entity.DeletedBy = actorUserId;
+            entity.DeletedAt = DateTime.UtcNow;
 
             return await _db.SaveChangesAsync() > 0;
         }

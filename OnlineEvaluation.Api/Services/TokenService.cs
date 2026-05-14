@@ -23,13 +23,17 @@ namespace OnlineEvaluation.Api.Services
         {
             var claims = new List<Claim>
             {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Email ?? string.Empty),
-                new Claim("uid",user.Id),
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id), 
+                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty), 
+                // ===========================
                 new Claim("fullname", user.FullName ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
-            claims.AddRange(roles.Select(u => new Claim(ClaimTypes.Role, u)));
+            foreach (var role in roles)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, role));
+            }
 
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
