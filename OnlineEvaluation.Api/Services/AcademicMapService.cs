@@ -118,7 +118,22 @@ namespace OnlineEvaluation.Api.Services
             var entity = await _db.AcademicMaps.FindAsync(id);
             if (entity == null) return false;
 
+            if (entity.CollegeId != dto.CollegeId ||
+                entity.StudyProgramId != dto.StudyProgramId ||
+                entity.BranchId != dto.BranchId)
+            {
+                var college = await _db.Colleges.FindAsync(dto.CollegeId);
+                var program = await _db.StudyPrograms.FindAsync(dto.StudyProgramId);
+                var branch = await _db.Branches.FindAsync(dto.BranchId);
+
+                if (college == null || program == null || branch == null)
+                    throw new Exception("One or more Master Data IDs are invalid.");
+
+                entity.AliasCode = $"{college.Code}-{program.ShortName}-{branch.Code}".ToUpper();
+            }
+
             _mapper.Map(dto, entity);
+
             entity.UpdatedBy = actorUserId;
             entity.UpdatedAt = DateTime.UtcNow;
 

@@ -49,15 +49,7 @@ namespace OnlineEvaluation.Api.Controllers
             {
                 var authResponse = await _auth.LoginAsync(dto);
 
-                var cookieOptions = new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = true,
-                    SameSite = SameSiteMode.None,
-                    Expires = authResponse.AccessTokenExpiresAt.AddDays(Convert.ToDouble(_configuration["Jwt:RefreshTokenExpireDays"] ?? "30")),
-                    Path = "/"
-                };
-                Response.Cookies.Append("refreshToken", authResponse.RefreshToken, cookieOptions);
+                AppendRefreshTokenCookie(authResponse.RefreshToken, authResponse.AccessTokenExpiresAt);
 
                 return Ok(new
                 {
@@ -81,15 +73,9 @@ namespace OnlineEvaluation.Api.Controllers
             try
             {
                 var authResponse = await _auth.RefreshTokenAsync(refreshToken);
-                var cookieOptions = new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = true,
-                    SameSite = SameSiteMode.None,
-                    Expires = authResponse.AccessTokenExpiresAt.AddDays(Convert.ToDouble(_configuration["Jwt:RefreshTokenExpireDays"] ?? "30")),
-                    Path = "/",
-                };
-                Response.Cookies.Append("refreshToken", authResponse.RefreshToken, cookieOptions);
+
+                AppendRefreshTokenCookie(authResponse.RefreshToken, authResponse.AccessTokenExpiresAt);
+
                 return Ok(new
                 {
                     accessToken = authResponse.AccessToken,
@@ -98,13 +84,14 @@ namespace OnlineEvaluation.Api.Controllers
             }
             catch (UnauthorizedAccessException)
             {
-                return Unauthorized(new { error = "Invalid refresh token" });
+                RemoveRefreshTokenCookie();
+                return Unauthorized(new { error = "Invalid or expired session. Please login again." });
             }
         }
 
         [HttpPost("revoke")]
         [Authorize]
-        public async Task<IActionResult> Revoke([FromBody] RefreshRequestDto dto)
+        public async Task<IActionResult> Revoke()
         {
             if (!Request.Cookies.TryGetValue("refreshToken", out var refreshToken) || string.IsNullOrEmpty(refreshToken))
             {
@@ -118,19 +105,43 @@ namespace OnlineEvaluation.Api.Controllers
                 return NotFound(new { error = "Refresh token not found or already revoked" });
             }
 
-                // Clear cookie
-                var cookieOptions = new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = true,
-                    SameSite = SameSiteMode.None,
-                    Expires = DateTime.UtcNow.AddDays(-1),
-                    Path = "/"
-                };
-            Response.Cookies.Append("refreshToken", string.Empty, cookieOptions);
+            // Clear cookie
+            RemoveRefreshTokenCookie();
 
             return Ok(new { message = "Refresh token revoked and cookie cleared" });
         }
+
+        // NEW: This centralizes the cookie creation logic so Login and Refresh use the exact same settings.
+        private void AppendRefreshTokenCookie(string token, DateTime accessTokenExpiresAt)
+        {
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Expires = accessTokenExpiresAt.AddDays(Convert.ToDouble(_configuration["Jwt:RefreshTokenExpireDays"] ?? "30")),
+                Path = "/"
+            };
+
+            Response.Cookies.Append("refreshToken", token, cookieOptions);
+        }
+
+        // NEW: This centralizes cookie deletion, ensuring the Path and SameSite settings match the creation settings.
+        private void RemoveRefreshTokenCookie()
+        {
+            var cookieOptions = new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = true,
+                SameSite = SameSiteMode.None,
+                Expires = DateTime.UtcNow.AddDays(-1), // Expire immediately
+                Path = "/"
+            };
+
+            Response.Cookies.Append("refreshToken", string.Empty, cookieOptions);
+        }
+
+
 
         // Email endpoints intentionally return 400 in dev to avoid confusion
         [HttpPost("confirm-email")]

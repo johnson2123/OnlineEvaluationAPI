@@ -146,15 +146,16 @@ namespace OnlineEvaluation.Api.Services
 
         public async Task<AuthResponseDto> RefreshTokenAsync(string refreshToken)
         {
+            if (string.IsNullOrWhiteSpace(refreshToken))
+                throw new UnauthorizedAccessException("Refresh token is required.");
+
             var incomingHash = TokenHelpers.ComputeHmacSha256Base64(refreshToken, _refeshTokenHashKey);
 
-            var tokenEntity = await _db.RefreshTokens.Include(u => u.User)
-                                                      .FirstOrDefaultAsync(u => u.TokenHash == incomingHash);
+            var tokenEntity = await _db.RefreshTokens
+                                        .FirstOrDefaultAsync(u => u.TokenHash == incomingHash);
 
-            if(tokenEntity == null || !tokenEntity.IsActive)
-            {
+            if (tokenEntity == null)
                 throw new UnauthorizedAccessException("Invalid refresh token");
-            }
 
             if (tokenEntity.Revoked || tokenEntity.ExpiresAt <= DateTime.UtcNow)
             {
@@ -164,48 +165,43 @@ namespace OnlineEvaluation.Api.Services
                     .ToListAsync();
 
                 foreach (var t in allTokens) t.Revoked = true;
-
                 await _db.SaveChangesAsync();
+
                 throw new UnauthorizedAccessException("Invalid refresh token");
             }
 
-            await using var tx = await _db.Database.BeginTransactionAsync();
-            try
+            var user = await _userManager.FindByIdAsync(tokenEntity.UserId);
+            if (user == null || !user.IsActive)
+                throw new UnauthorizedAccessException("User no longer exists or is inactive.");
+
+            // Update the old token and create the new one (Token Rotation)
+            tokenEntity.Revoked = true;
+
+            var newRefreshToken = _tokenService.GenerateRefreshToken();
+            var newRefreshTokenHash = TokenHelpers.ComputeHmacSha256Base64(newRefreshToken, _refeshTokenHashKey);
+            tokenEntity.ReplacedByTokenHash = newRefreshTokenHash;
+
+            var newTokenEntity = new RefreshToken
             {
-                tokenEntity.Revoked = true;
+                TokenHash = newRefreshTokenHash,
+                UserId = user.Id,
+                ExpiresAt = DateTime.UtcNow.AddDays(Convert.ToDouble(_config["Jwt:RefreshTokenExpireDays"] ?? "30")),
+                CreatedAt = DateTime.UtcNow
+            };
 
-                var newRefreshToken = _tokenService.GenerateRefreshToken();
-                var newRefreshTokenHash = TokenHelpers.ComputeHmacSha256Base64(newRefreshToken, _refeshTokenHashKey);
+            _db.RefreshTokens.Add(newTokenEntity);
 
-                tokenEntity.ReplacedByTokenHash = newRefreshTokenHash;
+            await _db.SaveChangesAsync();
 
-                var newTokenEntity = new RefreshToken
-                {
-                    TokenHash = newRefreshTokenHash,
-                    UserId = tokenEntity.UserId,
-                    ExpiresAt = DateTime.UtcNow.AddDays(Convert.ToDouble(_config["Jwt:RefreshTokenExpireDays"] ?? "30")),
-                    CreatedAt = DateTime.UtcNow
-                };
+            var roles = await _userManager.GetRolesAsync(user);
+            var accessTokenResult = _tokenService.GenerateAccessToken(user, roles);
 
-                _db.RefreshTokens.Add(newTokenEntity);
-                await _db.SaveChangesAsync();
-                await tx.CommitAsync();
-
-                var roles = await _userManager.GetRolesAsync(tokenEntity.User);
-                var accessToken = _tokenService.GenerateAccessToken(tokenEntity.User, roles);
-
-                return new AuthResponseDto
-                {
-                    AccessToken = accessToken.Token,
-                    RefreshToken = newRefreshToken,
-                    AccessTokenExpiresAt = accessToken.ExpiresAtUtc
-                };
-            }
-            catch
+            return new AuthResponseDto
             {
-                await tx.RollbackAsync();
-                throw;
-            }
+                AccessToken = accessTokenResult.Token,
+                RefreshToken = newRefreshToken,
+                AccessTokenExpiresAt = accessTokenResult.ExpiresAtUtc
+            };
 
         }
 

@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using OnlineEvaluation.Api.Models.DTO;
 using OnlineEvaluation.Api.Services.IServices;
@@ -8,6 +9,7 @@ namespace OnlineEvaluation.Api.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = "Admin")]
     public class AcademicMapController : ControllerBase
     {
         private readonly IAcademicMapService _service;
@@ -53,7 +55,7 @@ namespace OnlineEvaluation.Api.Controllers
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
             var success = await _service.UpdateAsync(id, dto, userId);
             if (!success) return NotFound();
-            return NoContent();
+            return Ok(new { message = "Academic Map updated successfully" });
         }
 
         [HttpDelete("{id}")]
