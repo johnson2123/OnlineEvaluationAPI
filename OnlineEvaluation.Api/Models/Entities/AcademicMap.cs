@@ -9,9 +9,10 @@
         public int CollegeId { get; set; }
         public int StudyProgramId { get; set; }
         public int BranchId { get; set; }
+        public string Regulation { get; set; } = string.Empty;
 
 
-        // This will hold the "AUCE-BTECH-CSE" logic
+        // This will hold the "AUCE-BTECH-CSE-R20" logic
         public string? AliasCode { get; set; }
         public bool IsActive { get; set; }
 

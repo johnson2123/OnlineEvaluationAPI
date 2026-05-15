@@ -19,9 +19,10 @@ namespace OnlineEvaluation.Api.Validators
                 .NotEmpty().WithMessage("Please select a Branch.")
                 .GreaterThan(0).WithMessage("Invalid Branch selection.");
 
-            RuleFor(x => x.AliasCode)
-                .MaximumLength(100).WithMessage("Alias Code cannot be longer than 100 characters.");
-
+            RuleFor(x => x.Regulation)
+                .NotEmpty().WithMessage("Regulation code is required.")
+                .MaximumLength(20).WithMessage("Regulation code cannot be longer than 20 characters.")
+                .Matches(@"^[a-zA-Z0-9-]+$").WithMessage("Regulation can only contain letters, numbers, and hyphens (e.g., R20, R-23).");
 
         }
     }

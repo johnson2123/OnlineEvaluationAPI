@@ -16,5 +16,6 @@
         public string CollegeName { get; set; } = string.Empty;
         public string ProgramName { get; set; } = string.Empty;
         public string BranchName { get; set; } = string.Empty;
+        public string Regulation { get; set; } = string.Empty;
     }
 }

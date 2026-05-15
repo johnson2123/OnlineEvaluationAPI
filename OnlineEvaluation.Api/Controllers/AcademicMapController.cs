@@ -44,18 +44,34 @@ namespace OnlineEvaluation.Api.Controllers
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] CreateAcademicMapDto dto)
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var result = await _service.CreateAsync(dto, userId);
-            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                var result = await _service.CreateAsync(dto, userId);
+                return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+            }
+            catch (Exception ex)
+            {
+               
+                return BadRequest(new { message = ex.Message });
+            }
+
         }
 
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] UpdateAcademicMapDto dto)
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var success = await _service.UpdateAsync(id, dto, userId);
-            if (!success) return NotFound();
-            return Ok(new { message = "Academic Map updated successfully" });
+            try
+            {
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                var success = await _service.UpdateAsync(id, dto, userId);
+                if (!success) return NotFound();
+                return Ok(new { message = "Academic Map updated successfully" });
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = ex.Message });
+            }
         }
 
         [HttpDelete("{id}")]

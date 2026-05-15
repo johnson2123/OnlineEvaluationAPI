@@ -17,9 +17,13 @@ namespace OnlineEvaluation.Api.Data.Configurations
 
             // --- THE UNIQUE TRIPLE CONSTRAINT ---
             // This prevents creating "AUCE + BTECH + CSE" more than once.
-            builder.HasIndex(x => new { x.CollegeId, x.StudyProgramId, x.BranchId })
+            builder.HasIndex(x => new { x.CollegeId, x.StudyProgramId, x.BranchId, x.Regulation })
                 .IsUnique()
-                .HasDatabaseName("IX_Unique_Academic_Path");
+                .HasDatabaseName("IX_Unique_Academic_Path_Regulation");
+
+            builder.Property(x => x.Regulation)
+                .IsRequired()
+                .HasMaxLength(20);
 
             builder.Property(x => x.AliasCode)
                 .HasMaxLength(100);

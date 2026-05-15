@@ -13,18 +13,22 @@ namespace OnlineEvaluation.Api.Mappings
             CreateMap<AcademicMap, AcademicMapDto>()
                 .ForMember(dest => dest.CollegeName, opt => opt.MapFrom(src => src.College.Name))
                 .ForMember(dest => dest.ProgramName, opt => opt.MapFrom(src => src.StudyProgram.Name))
-                .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch.Name));
+                .ForMember(dest => dest.BranchName, opt => opt.MapFrom(src => src.Branch.Name))
+                .ForMember(dest => dest.Regulation, opt => opt.MapFrom(src => src.Regulation));
 
 
             CreateMap<CreateAcademicMapDto, AcademicMap>()
                 .ForMember(dest => dest.Guid, opt => opt.MapFrom(src => Guid.NewGuid()))
+                .ForMember(dest => dest.Regulation, opt => opt.MapFrom(src => src.Regulation))
                 .ForMember(dest => dest.CreatedAt, opt => opt.MapFrom(src => DateTime.UtcNow))
+                .ForMember(dest => dest.IsActive, opt => opt.MapFrom(src => true))
                 .ForMember(dest => dest.IsDeleted, opt => opt.MapFrom(src => false));
 
 
             CreateMap<UpdateAcademicMapDto, AcademicMap>()
                 .ForMember(dest => dest.Id, opt => opt.Ignore())
                 .ForMember(dest => dest.Guid, opt => opt.Ignore())
+                .ForMember(dest => dest.AliasCode, opt => opt.Ignore())
                 .ForMember(dest => dest.AliasCode, opt => opt.Ignore());
 
             // 4. LookUp Mappings 

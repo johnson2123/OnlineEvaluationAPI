@@ -28,12 +28,21 @@ namespace OnlineEvaluation.Api.Services
             if (college == null || program == null || branch == null)
                 throw new Exception("Invalid master data selection.");
 
+            var exists = await _db.AcademicMaps.AnyAsync(x =>
+                x.CollegeId == dto.CollegeId &&
+                x.StudyProgramId == dto.StudyProgramId &&
+                x.BranchId == dto.BranchId &&
+                x.Regulation.ToLower() == dto.Regulation.Trim().ToLower());
+
+            if (exists)
+                throw new Exception($"An academic map for this branch already exists under regulation {dto.Regulation.ToUpper()}.");
+
             var entity = _mapper.Map<AcademicMap>(dto);
 
             // Logic for Alias Name generation: COLLEGE-PROGRAM-BRANCH
             if (string.IsNullOrWhiteSpace(entity.AliasCode))
             {
-                entity.AliasCode = $"{college.Code}-{program.ShortName}-{branch.Code}".ToUpper();
+                entity.AliasCode = $"{college.Code}-{program.ShortName}-{branch.Code}-{entity.Regulation}".ToUpper();
             }
 
             entity.CreatedBy = actorUserId;
@@ -118,9 +127,12 @@ namespace OnlineEvaluation.Api.Services
             var entity = await _db.AcademicMaps.FindAsync(id);
             if (entity == null) return false;
 
+            var incomingRegulation = dto.Regulation.Trim().ToUpper();
+
             if (entity.CollegeId != dto.CollegeId ||
                 entity.StudyProgramId != dto.StudyProgramId ||
-                entity.BranchId != dto.BranchId)
+                entity.BranchId != dto.BranchId ||
+                entity.Regulation != incomingRegulation)
             {
                 var college = await _db.Colleges.FindAsync(dto.CollegeId);
                 var program = await _db.StudyPrograms.FindAsync(dto.StudyProgramId);
@@ -129,7 +141,17 @@ namespace OnlineEvaluation.Api.Services
                 if (college == null || program == null || branch == null)
                     throw new Exception("One or more Master Data IDs are invalid.");
 
-                entity.AliasCode = $"{college.Code}-{program.ShortName}-{branch.Code}".ToUpper();
+                var duplicateExists = await _db.AcademicMaps.AnyAsync(x =>
+                    x.Id != id &&
+                    x.CollegeId == dto.CollegeId &&
+                    x.StudyProgramId == dto.StudyProgramId &&
+                    x.BranchId == dto.BranchId &&
+                    x.Regulation.ToLower() == dto.Regulation.Trim().ToLower());
+
+                if (duplicateExists)
+                    throw new Exception($"Cannot update map. An academic map already exists for this path under regulation {incomingRegulation}.");
+
+                entity.AliasCode = $"{college.Code}-{program.ShortName}-{branch.Code}-{incomingRegulation}".ToUpper();
             }
 
             _mapper.Map(dto, entity);
