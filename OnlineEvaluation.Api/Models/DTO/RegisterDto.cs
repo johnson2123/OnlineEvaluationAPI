@@ -15,7 +15,15 @@ namespace OnlineEvaluation.Api.Models.DTO
         public string Password { get; set; }
 
         [Required]
-        [MaxLength(200)]
-        public string FullName { get; set; }
+        [MaxLength(100)]
+        public string FirstName { get; set; }
+
+        [Required]
+        [MaxLength(100)]
+        public string LastName { get; set; }
+
+        // --- Role-based registration ---
+        [Required]
+        public string Role { get; set; }
     }
 }

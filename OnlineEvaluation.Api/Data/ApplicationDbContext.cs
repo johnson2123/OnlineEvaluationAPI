@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using OnlineEvaluation.Api.Data.Configurations;
 using OnlineEvaluation.Api.Models;
 using OnlineEvaluation.Api.Models.Entities;
+using System.Reflection.Emit;
 
 namespace OnlineEvaluation.Api.Data
 {
@@ -25,16 +26,8 @@ namespace OnlineEvaluation.Api.Data
         {
             base.OnModelCreating(builder);
 
-            builder.Entity<RefreshToken>(entity =>
-            {
-                entity.HasKey(u => u.Id);
-                entity.HasIndex(u => u.TokenHash).IsUnique();
-                entity.HasOne(u => u.User)
-                      .WithMany()
-                      .HasForeignKey(u => u.UserId)
-                      .OnDelete(DeleteBehavior.Cascade);
-            });
-
+            builder.ApplyConfiguration(new ApplicationUserConfiguration());
+            builder.ApplyConfiguration(new RefreshTokenConfiguration());
             builder.ApplyConfiguration(new UniversityConfiguration());
             builder.ApplyConfiguration(new CollegeConfiguration());
             builder.ApplyConfiguration(new StudyProgramConfiguration());

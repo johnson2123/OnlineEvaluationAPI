@@ -42,8 +42,9 @@ namespace OnlineEvaluation.Api.Seed
                 {
                     UserName = adminEmail,
                     Email = adminEmail,
-                    FullName = "System Admin",
-                    EmailConfirmed = true,
+                    FirstName = "Admin",
+                    LastName = "System",
+                    EmailConfirmed = false,
                 };
 
                 var result = await _userManager.CreateAsync(admin, adminPassword);

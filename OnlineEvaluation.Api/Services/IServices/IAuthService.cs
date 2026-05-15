@@ -11,5 +11,6 @@ namespace OnlineEvaluation.Api.Services.IServices
         Task<bool> ConfirmEmailAsync(string userId, string token);
         Task<bool> ForgotPasswordAsync(string email);
         Task<bool> ResetPasswordAsync(ResetPasswordDto dto);
+        Task<bool> ChangeInitialPasswordAsync(ChangeInitialPasswordDto dto);
     }
 }

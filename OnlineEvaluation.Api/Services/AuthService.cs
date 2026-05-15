@@ -41,7 +41,7 @@ namespace OnlineEvaluation.Api.Services
         public async Task<RegisterResultDto> RegisterAsync(RegisterDto dto)
         {
             var existing = await _userManager.FindByEmailAsync(dto.Email);
-            if(existing != null)
+            if (existing != null)
             {
                 return new RegisterResultDto(false, new[] { "Email already in use" });
             }
@@ -50,8 +50,11 @@ namespace OnlineEvaluation.Api.Services
             {
                 UserName = dto.Email,
                 Email = dto.Email,
-                FullName = dto.FullName,
-                EmailConfirmed = true //allowing for now
+                FirstName = dto.FirstName, 
+                LastName = dto.LastName,   
+                IsActive = true,
+                MustChangePassword = true, 
+                EmailConfirmed = true      
             };
 
             var result = await _userManager.CreateAsync(user, dto.Password);
@@ -60,15 +63,14 @@ namespace OnlineEvaluation.Api.Services
                 return new RegisterResultDto(false, result.Errors.Select(u => u.Description));
             }
 
-            var defaultRole = "User";
-            if(!await _roleManager.RoleExistsAsync(defaultRole))
+            var assignedRole = string.IsNullOrWhiteSpace(dto.Role) ? "User" : dto.Role;
+
+            if (!await _roleManager.RoleExistsAsync(assignedRole))
             {
-                await _roleManager.CreateAsync(new IdentityRole(defaultRole));
+                await _roleManager.CreateAsync(new IdentityRole(assignedRole));
             }
-            if (!await _userManager.IsInRoleAsync(user, defaultRole))
-            {
-                await _userManager.AddToRoleAsync(user, defaultRole);
-            }
+
+            await _userManager.AddToRoleAsync(user, assignedRole);
 
             return new RegisterResultDto(true, Array.Empty<string>());
         }
@@ -87,8 +89,26 @@ namespace OnlineEvaluation.Api.Services
             if (_userManager.Options.SignIn.RequireConfirmedEmail && !user.EmailConfirmed)
                 throw new UnauthorizedAccessException("Email not confirmed");
 
-            var roles = await _userManager.GetRolesAsync(user);
+            if (user.MustChangePassword)
+            {
+                var rolecheck = await _userManager.GetRolesAsync(user);
 
+                if (rolecheck.Contains("Admin"))
+                {
+                    user.MustChangePassword = false;
+                    await _userManager.UpdateAsync(user);
+                }
+                else
+                {
+
+                    return new AuthResponseDto
+                    {
+                        RequiresPasswordChange = true
+                    };
+                }
+            }
+
+            var roles = await _userManager.GetRolesAsync(user);
             var tokenResult = _tokenService.GenerateAccessToken(user, roles);
 
             var refreshToken = _tokenService.GenerateRefreshToken();
@@ -133,7 +153,8 @@ namespace OnlineEvaluation.Api.Services
             {
                 AccessToken = tokenResult.Token,
                 RefreshToken = refreshToken,
-                AccessTokenExpiresAt = tokenResult.ExpiresAtUtc
+                AccessTokenExpiresAt = tokenResult.ExpiresAtUtc,
+                RequiresPasswordChange = false
             };
         }
 
@@ -209,6 +230,26 @@ namespace OnlineEvaluation.Api.Services
             tokenEntity.Revoked = true;
             await _db.SaveChangesAsync();
             return true;
+        }
+
+        public async Task<bool> ChangeInitialPasswordAsync(ChangeInitialPasswordDto dto)
+        {
+            var user = await _userManager.FindByEmailAsync(dto.Email);
+            if (user == null) return false;
+
+            var result = await _userManager.ChangePasswordAsync(user, dto.CurrentPassword, dto.NewPassword);
+
+            if (result.Succeeded)
+            {
+
+                user.MustChangePassword = false;
+                user.IsActive = true;
+
+                await _userManager.UpdateAsync(user);
+                return true;
+            }
+
+            return false;
         }
 
         public Task<bool> ConfirmEmailAsync(string userId, string token)

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity.Data;
 using Microsoft.AspNetCore.Mvc;
 using OnlineEvaluation.Api.Models.DTO;
+using OnlineEvaluation.Api.Services;
 using OnlineEvaluation.Api.Services.IServices;
 
 namespace OnlineEvaluation.Api.Controllers
@@ -20,6 +21,7 @@ namespace OnlineEvaluation.Api.Controllers
         }
 
         [HttpPost("register")]
+        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> Register([FromBody] RegisterDto dto)
         {
             if (!ModelState.IsValid)
@@ -49,6 +51,15 @@ namespace OnlineEvaluation.Api.Controllers
             {
                 var authResponse = await _auth.LoginAsync(dto);
 
+                if (authResponse.RequiresPasswordChange)
+                {
+                    return Ok(new
+                    {
+                        requiresPasswordChange = true,
+                        message = "First-time login. Please redirect to password setup."
+                    });
+                }
+
                 AppendRefreshTokenCookie(authResponse.RefreshToken);
 
                 return Ok(new
@@ -61,6 +72,19 @@ namespace OnlineEvaluation.Api.Controllers
             {
                 return Unauthorized(new { error = ex.Message });
             }
+        }
+
+        [HttpPost("setup-password")]
+        public async Task<IActionResult> SetupPassword([FromBody] ChangeInitialPasswordDto dto)
+        {
+            var result = await _auth.ChangeInitialPasswordAsync(dto);
+
+            if (result)
+            {
+                return Ok(new { message = "Account verified and password updated." });
+            }
+
+            return BadRequest("Invalid request or incorrect temporary password.");
         }
 
         [HttpPost("refresh")]

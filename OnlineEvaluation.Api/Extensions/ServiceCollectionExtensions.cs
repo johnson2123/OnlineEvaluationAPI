@@ -30,6 +30,7 @@ namespace OnlineEvaluation.Api.Extensions
                 options.Password.RequireDigit = true;
                 options.Password.RequireLowercase = true;
                 options.Password.RequireUppercase = true;
+                options.User.RequireUniqueEmail = true;
                 options.Password.RequiredLength = 8;
                 options.Lockout.MaxFailedAccessAttempts = 10;
                 options.SignIn.RequireConfirmedEmail = false; //for now
@@ -49,7 +50,7 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddFluentValidationClientsideAdapters();
 
 
-            var key = Encoding.UTF8.GetBytes(config["Jwt:Key"]);
+            var key = Encoding.UTF8.GetBytes(config["Jwt:Key"] ?? "MyFallbackSecreKeyHere_ThisIsSoSoLongAndTough@!#$");
             services.AddAuthentication(options =>
             {
                 options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
