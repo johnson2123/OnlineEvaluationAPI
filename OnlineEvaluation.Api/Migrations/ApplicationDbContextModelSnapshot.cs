@@ -520,20 +520,23 @@ namespace OnlineEvaluation.Api.Migrations
 
             modelBuilder.Entity("OnlineEvaluation.Api.Models.Entities.Student", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("uniqueidentifier");
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("AcademicAliasCode")
                         .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<int>("AcademicMapId")
                         .HasColumnType("int");
 
                     b.Property<string>("Address")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("ApplicationUserId")
                         .IsRequired()
@@ -541,21 +544,24 @@ namespace OnlineEvaluation.Api.Migrations
 
                     b.Property<string>("Batch")
                         .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("nvarchar(20)");
+                        .HasMaxLength(15)
+                        .HasColumnType("nvarchar(15)");
 
                     b.Property<string>("BloodGroup")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<string>("ContactNumber")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<DateTime>("DateOfBirth")
                         .HasColumnType("datetime2");
@@ -564,15 +570,21 @@ namespace OnlineEvaluation.Api.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<string>("DeletedBy")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("FatherName")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("Gender")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(15)
+                        .HasColumnType("nvarchar(15)");
+
+                    b.Property<Guid>("Guid")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
@@ -582,14 +594,15 @@ namespace OnlineEvaluation.Api.Migrations
 
                     b.Property<string>("RegistrationNumber")
                         .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<string>("UpdatedBy")
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.HasKey("Id");
 
@@ -598,10 +611,87 @@ namespace OnlineEvaluation.Api.Migrations
                     b.HasIndex("ApplicationUserId")
                         .IsUnique();
 
+                    b.HasIndex("Guid")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("IsActive");
+
                     b.HasIndex("RegistrationNumber")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("Students", (string)null);
+                });
+
+            modelBuilder.Entity("OnlineEvaluation.Api.Models.Entities.StudentAcademicRecord", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("AcademicAliasCode")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("AcademicMapId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("AcademicSessionSlug")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("AcademicYear")
+                        .IsRequired()
+                        .HasMaxLength(15)
+                        .HasColumnType("nvarchar(15)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid>("Guid")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsCurrentSemester")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Semester")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Standing")
+                        .HasColumnType("int");
+
+                    b.Property<int>("StudentId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UpdatedBy")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AcademicMapId");
+
+                    b.HasIndex("AcademicSessionSlug");
+
+                    b.HasIndex("IsCurrentSemester", "Standing");
+
+                    b.HasIndex("StudentId", "Semester")
                         .IsUnique();
 
-                    b.ToTable("Students");
+                    b.ToTable("StudentAcademicRecords", (string)null);
                 });
 
             modelBuilder.Entity("OnlineEvaluation.Api.Models.Entities.StudyProgram", b =>
@@ -967,14 +1057,38 @@ namespace OnlineEvaluation.Api.Migrations
                         .IsRequired();
 
                     b.HasOne("OnlineEvaluation.Api.Models.ApplicationUser", "User")
-                        .WithOne()
-                        .HasForeignKey("OnlineEvaluation.Api.Models.Entities.Student", "ApplicationUserId")
+                        .WithMany()
+                        .HasForeignKey("ApplicationUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("AcademicMap");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("OnlineEvaluation.Api.Models.Entities.StudentAcademicRecord", b =>
+                {
+                    b.HasOne("OnlineEvaluation.Api.Models.Entities.AcademicMap", "AcademicMap")
+                        .WithMany()
+                        .HasForeignKey("AcademicMapId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("OnlineEvaluation.Api.Models.Entities.Student", "Student")
+                        .WithMany("StudentAcademicRecords")
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AcademicMap");
+
+                    b.Navigation("Student");
+                });
+
+            modelBuilder.Entity("OnlineEvaluation.Api.Models.Entities.Student", b =>
+                {
+                    b.Navigation("StudentAcademicRecords");
                 });
 
             modelBuilder.Entity("OnlineEvaluation.Api.Models.Entities.University", b =>

@@ -2,7 +2,8 @@
 {
     public class Student
     {
-        public Guid Id { get; set; }
+        public int Id { get; set; }
+        public Guid Guid { get; set; } = Guid.NewGuid();
         public string ApplicationUserId { get; set; }
         public virtual ApplicationUser User { get; set; }
         public string RegistrationNumber { get; set; }
@@ -27,7 +28,7 @@
         public DateTime? DeletedAt { get; set; }
         public string? DeletedBy { get; set; }
 
-   
-        //public virtual ICollection<StudentAcademicRecord> StudentAcademicRecords { get; set; } = new List<StudentAcademicRecord>();
+
+        public virtual ICollection<StudentAcademicRecord> StudentAcademicRecords { get; set; } = new List<StudentAcademicRecord>();
     }
 }

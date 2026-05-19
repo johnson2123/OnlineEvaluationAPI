@@ -85,6 +85,7 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<IBranchService, BranchService>();
             services.AddScoped<ISubjectService, SubjectService>();
             services.AddScoped<IAcademicMapService, AcademicMapService>();
+            services.AddScoped<IStudentOnboardingService, StudentOnboardingService>();
 
             return services;
         }
