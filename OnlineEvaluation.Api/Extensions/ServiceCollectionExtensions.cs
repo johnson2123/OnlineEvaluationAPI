@@ -44,8 +44,6 @@ namespace OnlineEvaluation.Api.Extensions
                 
             }, new[] { typeof(UniversityProfile).Assembly });
             services.AddValidatorsFromAssemblyContaining<CreateUniversityValidator>();
-            services.AddValidatorsFromAssemblyContaining<CreateCollegeValidator>();
-            services.AddValidatorsFromAssemblyContaining<CreateBranchValidator>();
             services.AddFluentValidationAutoValidation();
             services.AddFluentValidationClientsideAdapters();
 
@@ -86,6 +84,8 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<ISubjectService, SubjectService>();
             services.AddScoped<IAcademicMapService, AcademicMapService>();
             services.AddScoped<IStudentOnboardingService, StudentOnboardingService>();
+            services.AddScoped<IExamCodeSpecificationService, ExamCodeSpecificationService>();
+            services.AddScoped<IStudentProfileService, StudentProfileService>();
 
             return services;
         }
