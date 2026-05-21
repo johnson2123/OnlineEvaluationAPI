@@ -25,6 +25,7 @@ namespace OnlineEvaluation.Api.Data
         public DbSet<StudentAcademicRecord> StudentAcademicRecords { get; set; }
 
         public DbSet<ExamCodeSpecification> ExamCodeSpecifications { get; set; }
+        public DbSet<Department> Departments { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -41,6 +42,7 @@ namespace OnlineEvaluation.Api.Data
             builder.ApplyConfiguration(new StudentConfiguration());
             builder.ApplyConfiguration(new StudentAcademicRecordConfiguration());
             builder.ApplyConfiguration(new ExamCodeSpecificationConfiguration());
+            builder.ApplyConfiguration(new DepartmentConfiguration());
         }
 
     }

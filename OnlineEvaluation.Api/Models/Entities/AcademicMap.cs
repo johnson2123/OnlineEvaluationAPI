@@ -33,8 +33,8 @@
         public virtual Branch Branch { get; set; } = null!;
 
 
-        //public virtual ICollection<SubjectExamConfig> SubjectExamConfigs { get; set; } = new List<SubjectExamConfig>();
+        public virtual ICollection<ExamCodeSpecification> ExamCodeSpecifications { get; set; } = new List<ExamCodeSpecification>();
 
-        //public virtual ICollection<Student> Students { get; set; } = new List<Student>();
+        public virtual ICollection<Student> Students { get; set; } = new List<Student>();
     }
 }

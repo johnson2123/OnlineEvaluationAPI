@@ -31,6 +31,11 @@ namespace OnlineEvaluation.Api.Data.Configurations
                    .HasForeignKey(d => d.SubjectId)
                    .OnDelete(DeleteBehavior.Restrict);
 
+            builder.HasOne(e => e.AcademicMap)
+                    .WithMany(am => am.ExamCodeSpecifications) // Points to collection in AcademicMap
+                    .HasForeignKey(e => e.AcademicMapId)
+                    .OnDelete(DeleteBehavior.Restrict);
+
 
             builder.HasIndex(e => new { e.AcademicMapId, e.Semester });
 

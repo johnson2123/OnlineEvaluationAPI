@@ -34,7 +34,7 @@ namespace OnlineEvaluation.Api.Data.Configurations
                 .OnDelete(DeleteBehavior.Restrict);
 
             builder.HasOne(s => s.AcademicMap)
-                .WithMany()
+                .WithMany(am => am.Students)
                 .HasForeignKey(s => s.AcademicMapId)
                 .OnDelete(DeleteBehavior.Restrict);
 
