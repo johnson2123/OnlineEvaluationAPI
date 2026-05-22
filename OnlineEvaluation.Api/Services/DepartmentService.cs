@@ -3,8 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using OnlineEvaluation.Api.Data;
 using OnlineEvaluation.Api.Models.DTO;
 using OnlineEvaluation.Api.Models.Entities;
+using OnlineEvaluation.Api.Services.IServices;
 
-namespace OnlineEvaluation.Api.Services.IServices
+namespace OnlineEvaluation.Api.Services
 {
     public class DepartmentService : IDepartmentService
     {
