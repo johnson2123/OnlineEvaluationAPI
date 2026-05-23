@@ -51,7 +51,7 @@ namespace OnlineEvaluation.Api.Validators
                 .WithMessage($"Gender must be one of the following values: {string.Join(", ", _allowedGenders)}.");
 
             RuleFor(x => x.ContactNumber)
-                .MaximumLength(10).WithMessage("Contact number cannot exceed 20 digits.");
+                .MaximumLength(10).WithMessage("Contact number cannot exceed 10 digits.");
 
             RuleFor(x => x.Address)
                 .MaximumLength(500).WithMessage("Address details cannot exceed 500 characters.");

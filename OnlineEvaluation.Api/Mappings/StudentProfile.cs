@@ -26,6 +26,7 @@ namespace OnlineEvaluation.Api.Mappings
                 .ForMember(dest => dest.IsActive, opt => opt.MapFrom(_ => true))
                 .ForMember(dest => dest.IsDeleted, opt => opt.MapFrom(_ => false))
 
+
                 // Robust String Normalization & Clean Trimming Configurations
                 .ForMember(dest => dest.RegistrationNumber, opt => opt.MapFrom(src => !string.IsNullOrWhiteSpace(src.RegistrationNumber) ? src.RegistrationNumber.Trim().ToUpper() : null))
                 .ForMember(dest => dest.FatherName, opt => opt.MapFrom(src => !string.IsNullOrWhiteSpace(src.FatherName) ? src.FatherName.Trim() : null))
@@ -34,7 +35,9 @@ namespace OnlineEvaluation.Api.Mappings
                 .ForMember(dest => dest.Address, opt => opt.MapFrom(src => !string.IsNullOrWhiteSpace(src.Address) ? src.Address.Trim() : null))
                 .ForMember(dest => dest.BloodGroup, opt => opt.MapFrom(src => !string.IsNullOrWhiteSpace(src.BloodGroup) ? src.BloodGroup.Trim().ToUpper() : null));
 
-             CreateMap<Student, StudentDto>();
+             CreateMap<Student, StudentDto>()
+                .ForMember(dest => dest.Id, opt => opt.MapFrom(src => src.Guid))
+                .ForMember(dest => dest.RegistrationNumber, opt => opt.MapFrom(src => src.RegistrationNumber));
         }
     }
 }

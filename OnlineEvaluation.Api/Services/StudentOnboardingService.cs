@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using OnlineEvaluation.Api.Constants;
 using OnlineEvaluation.Api.Data;
 using OnlineEvaluation.Api.Models;
@@ -15,17 +16,23 @@ namespace OnlineEvaluation.Api.Services
         private readonly ApplicationDbContext _db;
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IMapper _mapper;
+        private readonly ILogger<StudentOnboardingService> _logger;
 
-        public StudentOnboardingService(ApplicationDbContext db,
-                                        UserManager<ApplicationUser> userManager,
-                                        IMapper mapper)
+        public StudentOnboardingService(
+            ApplicationDbContext db,
+            UserManager<ApplicationUser> userManager,
+            IMapper mapper,
+            ILogger<StudentOnboardingService> logger)
         {
             _db = db;
             _userManager = userManager;
             _mapper = mapper;
+            _logger = logger;
         }
 
-        public async Task<BulkOperationResultDto<BulkRowErrorDto>> RegisterBulkStudentsAsync(List<StudentRegistrationDto> dtos, string actorUserId)
+        public async Task<BulkOperationResultDto<BulkRowErrorDto>> RegisterBulkStudentsAsync(
+            List<StudentRegistrationDto> dtos,
+            string actorUserId)
         {
             var result = new BulkOperationResultDto<BulkRowErrorDto>
             {
@@ -36,76 +43,82 @@ namespace OnlineEvaluation.Api.Services
             if (dtos == null || !dtos.Any())
                 return result;
 
-            // PERFORMANCE OPTIMIZATION: Cache configuration maps into memory lookups upfront
             var academicMapsMatrix = await _db.Set<AcademicMap>()
                 .Include(m => m.StudyProgram)
                 .AsNoTracking()
                 .ToDictionaryAsync(m => m.Id);
 
-            const int batchSize = 100;
-            for (int i = 0; i < dtos.Count; i += batchSize)
-            {
-                var currentBatchChunk = dtos.Skip(i).Take(batchSize).ToList();
+            const int BatchSize = 100;
+            int totalRecords = dtos.Count;
 
-                // Open an isolated atomic transaction block for the current chunk
+            for (int batchStart = 0; batchStart < totalRecords; batchStart += BatchSize)
+            {
+                var currentBatchChunk = dtos.Skip(batchStart).Take(BatchSize).ToList();
+                var identityAccountsCreatedInBatch = new List<ApplicationUser>();
+
                 using var transaction = await _db.Database.BeginTransactionAsync();
                 try
                 {
-                    for (int j = 0; j < currentBatchChunk.Count; j++)
+                    for (int i = 0; i < currentBatchChunk.Count; i++)
                     {
-                        var dto = currentBatchChunk[j];
+                        var dto = currentBatchChunk[i];
 
-                        // Calculate physical spreadsheet row number (assumes 1-based index + 1 header row)
-                        int currentSpreadsheetRow = i + j + 2;
+                        int currentSpreadsheetRow = batchStart + i + 2;
                         string currentRegNo = dto.RegistrationNumber?.Trim().ToUpper() ?? "UNKNOWN";
 
-                        try
+                        if (!academicMapsMatrix.TryGetValue(dto.AcademicMapId, out var cachedMap))
                         {
-
-                            if (!academicMapsMatrix.TryGetValue(dto.AcademicMapId, out var cachedMap))
-                            {
-                                result.Errors.Add(new BulkRowErrorDto
-                                {
-                                    RowNumber = currentSpreadsheetRow,
-                                    Identifier = $"RegNo: {currentRegNo}",
-                                    ErrorMessage = $"AcademicMap reference identity ({dto.AcademicMapId}) was not found in the registry."
-                                });
-                                continue; // Move to the next student row without breaking the batch loop
-                            }
-
-                            string cleanFirstName = dto.FirstName?.Replace(" ", "").Trim() ?? "Student";
-                            string formattedDob = dto.DateOfBirth.ToString("ddMMyyyy");
-                            string evaluatedBulkPassword = string.IsNullOrWhiteSpace(dto.Password)
-                                                                ? $"{cleanFirstName}@{formattedDob}"
-                                                                : dto.Password;
-              
-                            await ProcessOnboardingCoreAsync(dto, evaluatedBulkPassword, actorUserId, cachedMap);
-                            result.SuccessfullyProcessedCount++;
+                            throw new InvalidOperationException(
+                                $"Row {currentSpreadsheetRow} [RegNo: {currentRegNo}]: AcademicMap identity ({dto.AcademicMapId}) was not found.");
                         }
-                        catch (Exception ex)
-                        {
-                            // Intercept and isolate row anomalies (e.g., duplicate registration numbers) 
-                            result.Errors.Add(new BulkRowErrorDto
-                            {
-                                RowNumber = currentSpreadsheetRow,
-                                Identifier = $"RegNo: {currentRegNo}",
-                                ErrorMessage = ex.InnerException?.Message ?? ex.Message
-                            });
-                        }
+
+                        string cleanFirstName = dto.FirstName?.Replace(" ", "").Trim() ?? "Student";
+                        string formattedDob = dto.DateOfBirth.ToString("ddMMyyyy");
+                        string evaluatedBulkPassword = string.IsNullOrWhiteSpace(dto.Password)
+                            ? $"{cleanFirstName}@{formattedDob}"
+                            : dto.Password;
+
+                        var createdUser = await StageOnboardingCoreAsync(dto, evaluatedBulkPassword, actorUserId, cachedMap);
+                        identityAccountsCreatedInBatch.Add(createdUser);
                     }
 
                     await _db.SaveChangesAsync();
                     await transaction.CommitAsync();
+
+                    result.SuccessfullyProcessedCount += currentBatchChunk.Count;
+
+                    _db.ChangeTracker.Clear();
                 }
-                catch (Exception batchBlockException)
+                catch (Exception ex)
                 {
-                    // If a severe database-level exception occurs (like a lost connection), roll back only this chunk
                     await transaction.RollbackAsync();
+                    _db.ChangeTracker.Clear();
+
+                    _logger.LogError(ex, "Batch chunk processing exception caught between spreadsheet records row context {StartRow} and {EndRow}.",
+                        batchStart + 2, batchStart + currentBatchChunk.Count + 1);
+
+
+                    foreach (var user in identityAccountsCreatedInBatch)
+                    {
+                        try
+                        {
+                            var existingUser = await _userManager.FindByIdAsync(user.Id);
+                            if (existingUser != null)
+                            {
+                                await _userManager.DeleteAsync(existingUser);
+                            }
+                        }
+                        catch (Exception deleteEx)
+                        {
+                            _logger.LogCritical(deleteEx, "Critical: Leaked Identity registration record cleanup error for username target {UserName}.", user.UserName);
+                        }
+                    }
+
                     result.Errors.Add(new BulkRowErrorDto
                     {
-                        RowNumber = i + 2,
-                        Identifier = $"Batch Chunk Block [{(i / batchSize) + 1}]",
-                        ErrorMessage = $"Critical database execution failure within current chunk block: {batchBlockException.Message}"
+                        RowNumber = batchStart + 2,
+                        Identifier = $"BATCH_FAILURE_{batchStart}",
+                        ErrorMessage = $"Chunk block beginning at spreadsheet row position context {batchStart + 2} aborted: {ex.InnerException?.Message ?? ex.Message}"
                     });
                 }
             }
@@ -113,12 +126,12 @@ namespace OnlineEvaluation.Api.Services
             return result;
         }
 
-        public async Task<StudentDto> RegisterSingleStudentAsync(StudentRegistrationDto dto, string actorUserId)
+        public async Task<StudentDto> RegisterSingleStudentAsync(
+            StudentRegistrationDto dto,
+            string actorUserId)
         {
             if (string.IsNullOrWhiteSpace(dto.Password))
-            {
                 throw new ArgumentException("An explicit initial account credentials password is required for single form registration.");
-            }
 
             var academicMap = await _db.Set<AcademicMap>()
                 .Include(m => m.StudyProgram)
@@ -126,84 +139,84 @@ namespace OnlineEvaluation.Api.Services
                 .FirstOrDefaultAsync(m => m.Id == dto.AcademicMapId);
 
             if (academicMap == null)
-            {
-                throw new KeyNotFoundException($"Onboarding aborted: The Academic Map configuration profile tracing ID ({dto.AcademicMapId}) does not exist in the system registry.");
-            }
+                throw new KeyNotFoundException(
+                    $"Onboarding aborted: The Academic Map profile ID ({dto.AcademicMapId}) does not exist.");
 
             using var transaction = await _db.Database.BeginTransactionAsync();
             try
             {
-                var studentEntity = await ProcessOnboardingCoreAsync(dto, dto.Password, actorUserId, academicMap);
-
+                var coreUser = await StageOnboardingCoreAsync(dto, dto.Password, actorUserId, academicMap);
                 await _db.SaveChangesAsync();
                 await transaction.CommitAsync();
 
-                // Maps safely out to your flat standard DTO contract pattern
-                return _mapper.Map<StudentDto>(studentEntity);
+                var targetStudent = _db.Students.Local.First(s => s.ApplicationUserId == coreUser.Id);
+                return _mapper.Map<StudentDto>(targetStudent);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 await transaction.RollbackAsync();
+                _db.ChangeTracker.Clear();
+
+                _logger.LogError(ex, "Single onboarding failed for RegNo {RegNo}", dto.RegistrationNumber);
+
+                var cleanRegNo = dto.RegistrationNumber?.Trim().ToUpper();
+                var leakedUser = await _userManager.FindByNameAsync(cleanRegNo);
+                if (leakedUser != null)
+                {
+                    await _userManager.DeleteAsync(leakedUser);
+                }
                 throw;
             }
         }
 
-        private async Task<Student> ProcessOnboardingCoreAsync(
+        private async Task<ApplicationUser> StageOnboardingCoreAsync(
             StudentRegistrationDto dto,
             string explicitPassword,
             string actorUserId,
-            AcademicMap? preLoadedMap = null)
+            AcademicMap preLoadedMap)
         {
             if (string.IsNullOrWhiteSpace(dto.RegistrationNumber) || dto.RegistrationNumber.Trim().Length != 10)
-            {
                 throw new ArgumentException("Registration number is invalid. It must be exactly 10 characters long.");
-            }
 
             string cleanRegNo = dto.RegistrationNumber.Trim().ToUpper();
 
             if (!int.TryParse(cleanRegNo.Substring(0, 2), out int parsedShortYear))
-            {
                 throw new ArgumentException($"Registration number standard prefix '{cleanRegNo.Substring(0, 2)}' is not a valid year indicator.");
-            }
 
             int startYear = 2000 + parsedShortYear;
 
-            if (preLoadedMap == null || preLoadedMap.StudyProgram == null)
-            {
-                throw new InvalidOperationException($"The requested configuration academic profile trace is invalid or incomplete.");
-            }
+            if (preLoadedMap?.StudyProgram == null)
+                throw new InvalidOperationException("The requested configuration academic profile trace is invalid or incomplete.");
 
             int endYear = startYear + preLoadedMap.StudyProgram.DurationInYears;
             string dynamicBatchTimeline = $"{startYear}-{endYear}";
             string baselineAcademicYear = $"{startYear}-{startYear + 1}";
 
-            string resolvePassword = explicitPassword;
-            if (string.IsNullOrWhiteSpace(resolvePassword))
-            {
-                string cleanFirstName = dto.FirstName?.Replace(" ", "").Trim() ?? "Student";
-                string formattedDob = dto.DateOfBirth.ToString("ddMMyyyy");
-                resolvePassword = $"{cleanFirstName}@{formattedDob}";
-            }
-
             var coreIdentityAccount = new ApplicationUser
             {
                 UserName = cleanRegNo,
                 Email = dto.Email.Trim(),
-                FirstName = dto.FirstName.Trim(),          
-                LastName = dto.LastName.Trim(),            
-                IsActive = true,                           
-                MustChangePassword = true,                 // Triggers your front-end security router logic on login
+                FirstName = dto.FirstName.Trim(),
+                LastName = dto.LastName.Trim(),
+                IsActive = true,
+                MustChangePassword = true,
                 EmailConfirmed = true
             };
 
-            var identityCreationResponse = await _userManager.CreateAsync(coreIdentityAccount, resolvePassword);
+            var identityCreationResponse = await _userManager.CreateAsync(coreIdentityAccount, explicitPassword);
             if (!identityCreationResponse.Succeeded)
             {
                 string pooledErrors = string.Join(" | ", identityCreationResponse.Errors.Select(e => e.Description));
-                throw new InvalidOperationException($"Identity Management Guard Blocked Ingestion: {pooledErrors}");
+                throw new InvalidOperationException(pooledErrors);
             }
 
-            await _userManager.AddToRoleAsync(coreIdentityAccount, "Student");
+            var roleResult = await _userManager.AddToRoleAsync(coreIdentityAccount, "Student");
+            if (!roleResult.Succeeded)
+            {
+                string roleErrors = string.Join(" | ", roleResult.Errors.Select(e => e.Description));
+                await _userManager.DeleteAsync(coreIdentityAccount);
+                throw new InvalidOperationException($"Identity Role Assignment Failed: {roleErrors}");
+            }
 
             var studentDomainModel = _mapper.Map<Student>(dto);
             studentDomainModel.Guid = Guid.NewGuid();
@@ -213,7 +226,7 @@ namespace OnlineEvaluation.Api.Services
             studentDomainModel.CreatedAt = DateTime.UtcNow;
             studentDomainModel.CreatedBy = actorUserId;
 
-            _db.Set<Student>().Add(studentDomainModel);
+            _db.Students.Add(studentDomainModel);
 
             var baselineSemesterRecord = new StudentAcademicRecord
             {
@@ -221,20 +234,17 @@ namespace OnlineEvaluation.Api.Services
                 AcademicMapId = preLoadedMap.Id,
                 AcademicAliasCode = studentDomainModel.AcademicAliasCode,
                 Semester = 1,
-                AcademicYear = baselineAcademicYear, 
-
+                AcademicYear = baselineAcademicYear,
                 IsCurrentSemester = true,
                 Standing = SemesterStanding.Active,
-
                 AcademicSessionSlug = $"{preLoadedMap.Regulation}-{dynamicBatchTimeline}-SEM1",
                 CreatedAt = DateTime.UtcNow,
                 CreatedBy = actorUserId
             };
 
-            _db.Set<StudentAcademicRecord>().Add(baselineSemesterRecord);
+            _db.StudentAcademicRecords.Add(baselineSemesterRecord);
 
-            return studentDomainModel;
-
+            return coreIdentityAccount;
         }
     }
 }
