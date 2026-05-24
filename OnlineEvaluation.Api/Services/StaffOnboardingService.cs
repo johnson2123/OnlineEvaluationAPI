@@ -16,15 +16,18 @@ namespace OnlineEvaluation.Api.Services
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IMapper _mapper;
         private readonly ILogger<StaffOnboardingService> _logger;
+        IMfaSecurityService _mfaSecurity;
 
         public StaffOnboardingService(
             ApplicationDbContext db,
             UserManager<ApplicationUser> userManager,
             IMapper mapper,
-            ILogger<StaffOnboardingService> logger)
+            ILogger<StaffOnboardingService> logger,
+            IMfaSecurityService mfaSecurity)
         {
             _db = db;
             _userManager = userManager;
+            _mfaSecurity = mfaSecurity;
             _mapper = mapper;
             _logger = logger;
         }
@@ -282,6 +285,26 @@ namespace OnlineEvaluation.Api.Services
                 string roleErrors = string.Join(" | ", roleResult.Errors.Select(e => e.Description));
                 throw new InvalidOperationException($"Role assignment failed: {roleErrors}");
             }
+
+            var mfaSetting = new UserMFASetting
+            {
+                ApplicationUserId = coreIdentityAccount.Id,
+                IsMFAEnabled = dto.IsMfaEnabled,
+                MFAType = dto.MFAType,
+                CreatedAt = DateTime.UtcNow
+            };
+
+            if (dto.IsMfaEnabled && dto.MFAType == "AuthenticatorApp")
+            {
+                mfaSetting.SecretKey = string.IsNullOrWhiteSpace(dto.SecretKey)
+                    ? _mfaSecurity.GenerateRandomSecretKey()
+                    : dto.SecretKey;
+
+                var backupCodesList = _mfaSecurity.GenerateBackupCodes();
+                mfaSetting.BackupCodes = string.Join(",", backupCodesList);
+            }
+
+            await _db.Set<UserMFASetting>().AddAsync(mfaSetting);
 
             var staffDomainModel = _mapper.Map<StaffProfile>(dto);
             staffDomainModel.StaffGuid = Guid.NewGuid();

@@ -15,6 +15,7 @@ namespace OnlineEvaluation.Api.Services
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly RoleManager<IdentityRole> _roleManager;
         private readonly ITokenService _tokenService;
+        private readonly IMfaSecurityService _mfaSecurity;
         private readonly ApplicationDbContext _db;
         private readonly IEmailService _emailService;
         private readonly IConfiguration _config;
@@ -26,7 +27,8 @@ namespace OnlineEvaluation.Api.Services
             ITokenService tokenService,
             ApplicationDbContext db,
             IEmailService emailService,
-            IConfiguration config)
+            IConfiguration config,
+            IMfaSecurityService mfaSecurity)
         {
             _userManager = userManager;
             _roleManager = roleManager;
@@ -34,7 +36,7 @@ namespace OnlineEvaluation.Api.Services
             _db = db;
             _emailService = emailService;
             _config = config;
-
+            _mfaSecurity = mfaSecurity;
             _refeshTokenHashKey = _config["Jwt:RefreshTokenHashKey"];
         }
 
@@ -46,33 +48,95 @@ namespace OnlineEvaluation.Api.Services
                 return new RegisterResultDto(false, new[] { "Email already in use" });
             }
 
-            var user = new ApplicationUser
+            using var transaction = await _db.Database.BeginTransactionAsync();
+            try
             {
-                UserName = dto.Email,
-                Email = dto.Email,
-                FirstName = dto.FirstName, 
-                LastName = dto.LastName,   
-                IsActive = true,
-                MustChangePassword = true, 
-                EmailConfirmed = true      
-            };
+                var user = new ApplicationUser
+                {
+                    UserName = dto.Email,
+                    Email = dto.Email,
+                    FirstName = dto.FirstName,
+                    LastName = dto.LastName,
+                    IsActive = true,
+                    MustChangePassword = true,
+                    EmailConfirmed = true
+                };
 
-            var result = await _userManager.CreateAsync(user, dto.Password);
-            if (!result.Succeeded)
-            {
-                return new RegisterResultDto(false, result.Errors.Select(u => u.Description));
+                var result = await _userManager.CreateAsync(user, dto.Password);
+                if (!result.Succeeded)
+                {
+                    return new RegisterResultDto(false, result.Errors.Select(u => u.Description));
+                }
+
+                var mfaSetting = new UserMFASetting
+                {
+                    ApplicationUserId = user.Id,
+                    IsMFAEnabled = dto.IsMfaEnabled,
+                    MFAType = dto.MFAType,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                if (dto.IsMfaEnabled && dto.MFAType == "AuthenticatorApp")
+                {
+                    mfaSetting.SecretKey = string.IsNullOrWhiteSpace(dto.SecretKey)
+                        ? _mfaSecurity.GenerateRandomSecretKey()
+                        : dto.SecretKey;
+
+                    var backupCodesList = _mfaSecurity.GenerateBackupCodes();
+                    mfaSetting.BackupCodes = string.Join(",", backupCodesList);
+                }
+
+                await _db.UserMFASettings.AddAsync(mfaSetting);
+                await _db.SaveChangesAsync();
+
+                var assignedRole = string.IsNullOrWhiteSpace(dto.Role) ? "User" : dto.Role;
+
+                if (!await _roleManager.RoleExistsAsync(assignedRole))
+                {
+                    await _roleManager.CreateAsync(new IdentityRole(assignedRole));
+                }
+
+                await _userManager.AddToRoleAsync(user, assignedRole);
+
+                await transaction.CommitAsync();
+
+                return new RegisterResultDto(true, Array.Empty<string>());
             }
-
-            var assignedRole = string.IsNullOrWhiteSpace(dto.Role) ? "User" : dto.Role;
-
-            if (!await _roleManager.RoleExistsAsync(assignedRole))
+            catch (Exception ex)
             {
-                await _roleManager.CreateAsync(new IdentityRole(assignedRole));
+                await transaction.RollbackAsync();
+                return new RegisterResultDto(false, new[] { $"An error occurred during registration: {ex.Message}" });
             }
+        
+        }
 
-            await _userManager.AddToRoleAsync(user, assignedRole);
+        public string ValidatePreAuthToken(string preAuthToken)
+        {
+            if (string.IsNullOrWhiteSpace(preAuthToken)) return string.Empty;
 
-            return new RegisterResultDto(true, Array.Empty<string>());
+            try
+            {
+                return _tokenService.ValidateTokenAndGetUserId(preAuthToken);
+            }
+            catch(Exception ex)
+            {
+                Console.WriteLine($"[PRE-AUTH WRAPPER CRASH]: {ex.Message}");
+                if (ex.InnerException != null)
+                {
+                    Console.WriteLine($"[PRE-AUTH INNER]: {ex.InnerException.Message}");
+                }
+                return string.Empty;
+            }
+        }
+
+        public async Task<string> GetUserMfaSecretKeyAsync(string userId)
+        {
+            if (string.IsNullOrEmpty(userId)) return string.Empty;
+
+            var mfaSetting = await _db.UserMFASettings
+                .FirstOrDefaultAsync(m => m.ApplicationUserId == userId);
+
+            return mfaSetting?.SecretKey ?? string.Empty;
         }
 
         public async Task<AuthResponseDto> LoginAsync(LoginDto dto)
@@ -108,6 +172,29 @@ namespace OnlineEvaluation.Api.Services
                 }
             }
 
+            var mfaSetting = await _db.Set<UserMFASetting>()
+                .FirstOrDefaultAsync(m => m.ApplicationUserId == user.Id);
+
+            if (mfaSetting != null && mfaSetting.IsMFAEnabled)
+            {
+                var preAuthToken = _tokenService.GeneratePreAuthToken(user);
+
+                return new AuthResponseDto
+                {
+                    RequiresPasswordChange = false,
+                    IsMfaRequired = true,
+                    PreAuthToken = preAuthToken.Token,
+                    MfaType = mfaSetting.MFAType
+                };
+            }
+            return await GenerateFinalLoginTokensAsync(user.Id);
+        }
+
+        public async Task<AuthResponseDto> GenerateFinalLoginTokensAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null || !user.IsActive) throw new UnauthorizedAccessException("Session validation failed.");
+
             var roles = await _userManager.GetRolesAsync(user);
             var tokenResult = _tokenService.GenerateAccessToken(user, roles);
 
@@ -118,7 +205,6 @@ namespace OnlineEvaluation.Api.Services
             await using var tx = await _db.Database.BeginTransactionAsync();
             try
             {
-                // Revoke any existing active tokens for this user
                 var activeTokens = await _db.RefreshTokens
                     .Where(t => t.UserId == user.Id && !t.Revoked && t.ExpiresAt > DateTime.UtcNow)
                     .ToListAsync();
@@ -129,7 +215,6 @@ namespace OnlineEvaluation.Api.Services
                     t.ReplacedByTokenHash = refreshTokenHash;
                 }
 
-                // Insert new token
                 var refreshTokenEntity = new RefreshToken
                 {
                     TokenHash = refreshTokenHash,
@@ -140,7 +225,6 @@ namespace OnlineEvaluation.Api.Services
 
                 _db.RefreshTokens.Add(refreshTokenEntity);
                 await _db.SaveChangesAsync();
-
                 await tx.CommitAsync();
             }
             catch
@@ -154,7 +238,8 @@ namespace OnlineEvaluation.Api.Services
                 AccessToken = tokenResult.Token,
                 RefreshToken = refreshToken,
                 AccessTokenExpiresAt = tokenResult.ExpiresAtUtc,
-                RequiresPasswordChange = false
+                RequiresPasswordChange = false,
+                IsMfaRequired = false
             };
         }
 
@@ -232,24 +317,28 @@ namespace OnlineEvaluation.Api.Services
             return true;
         }
 
-        public async Task<bool> ChangeInitialPasswordAsync(ChangeInitialPasswordDto dto)
+        public async Task<IdentityResult> ChangeInitialPasswordAsync(ChangeInitialPasswordDto dto)
         {
             var user = await _userManager.FindByEmailAsync(dto.Email);
-            if (user == null) return false;
+            if (user == null)
+                return IdentityResult.Failed(new IdentityError { Description = "User context not found." });
+
+            if (!user.MustChangePassword)
+            {
+                return IdentityResult.Failed(new IdentityError { Description = "Initial setup already completed." });
+            }
 
             var result = await _userManager.ChangePasswordAsync(user, dto.CurrentPassword, dto.NewPassword);
 
             if (result.Succeeded)
             {
-
                 user.MustChangePassword = false;
                 user.IsActive = true;
 
                 await _userManager.UpdateAsync(user);
-                return true;
             }
 
-            return false;
+            return result;
         }
 
         public Task<bool> ConfirmEmailAsync(string userId, string token)
@@ -270,6 +359,8 @@ namespace OnlineEvaluation.Api.Services
             // Implementation Pending
             return Task.FromResult(false);
         }
+
+        
 
         
     }

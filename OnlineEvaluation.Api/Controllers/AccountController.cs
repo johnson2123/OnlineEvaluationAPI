@@ -14,10 +14,12 @@ namespace OnlineEvaluation.Api.Controllers
     {
         private readonly IAuthService _auth;
         private readonly IConfiguration _configuration;
-        public AccountController(IAuthService auth, IConfiguration configuration)
+        private readonly IMfaSecurityService _mfaSecurity;
+        public AccountController(IAuthService auth, IConfiguration configuration, IMfaSecurityService mfaSecurity)
         {
             _auth = auth;
             _configuration = configuration;
+            _mfaSecurity = mfaSecurity;
         }
 
         [HttpPost("register")]
@@ -60,6 +62,21 @@ namespace OnlineEvaluation.Api.Controllers
                     });
                 }
 
+                if (authResponse.IsMfaRequired)
+                {
+                    return Accepted(new
+                    {
+                        isMfaRequired = true,
+                        preAuthToken = authResponse.PreAuthToken,
+                        message = "MFA verification required."
+                    });
+                }
+
+                if (string.IsNullOrEmpty(authResponse.RefreshToken))
+                {
+                    return Unauthorized(new { error = "Authentication state is invalid." });
+                }
+
                 AppendRefreshTokenCookie(authResponse.RefreshToken);
 
                 return Ok(new
@@ -74,17 +91,62 @@ namespace OnlineEvaluation.Api.Controllers
             }
         }
 
+        [AllowAnonymous]
+        [HttpPost("verify-mfa")]
+        public async Task<IActionResult> VerifyMfa([FromBody] MfaVerificationDto dto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            try
+            {
+                var userId = _auth.ValidatePreAuthToken(dto.PreAuthToken);
+                if (string.IsNullOrEmpty(userId))
+                {
+                    return Unauthorized(new { error = "Session expired or invalid. Please re-enter your password." });
+                }
+
+              
+                var userSecretKey = await _auth.GetUserMfaSecretKeyAsync(userId);
+                if (string.IsNullOrEmpty(userSecretKey))
+                {
+                    return BadRequest(new { error = "MFA configuration not found for this account." });
+                }
+
+
+                bool isValid = _mfaSecurity.ValidateAuthenticatorCode(userSecretKey, dto.Code);
+                if (!isValid)
+                {
+                    return Unauthorized(new { error = "Invalid verification code. Please try again." });
+                }
+
+                var finalAuthResponse = await _auth.GenerateFinalLoginTokensAsync(userId);
+
+                AppendRefreshTokenCookie(finalAuthResponse.RefreshToken);
+
+                return Ok(new
+                {
+                    accessToken = finalAuthResponse.AccessToken,
+                    expiresAt = finalAuthResponse.AccessTokenExpiresAt
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An internal error occurred during verification." });
+            }
+        }
+
         [HttpPost("setup-password")]
         public async Task<IActionResult> SetupPassword([FromBody] ChangeInitialPasswordDto dto)
         {
             var result = await _auth.ChangeInitialPasswordAsync(dto);
 
-            if (result)
+            if (result.Succeeded)
             {
-                return Ok(new { message = "Account verified and password updated." });
+                return Ok(new { message = "Account verified and password updated successfully." });
             }
 
-            return BadRequest("Invalid request or incorrect temporary password.");
+            var errors = result.Errors.Select(e => e.Description);
+            return BadRequest(new { message = "Password update failed", errors });
         }
 
         [HttpPost("refresh")]

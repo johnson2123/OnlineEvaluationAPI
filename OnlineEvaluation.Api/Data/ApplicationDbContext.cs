@@ -26,8 +26,9 @@ namespace OnlineEvaluation.Api.Data
         public DbSet<ExamCodeSpecification> ExamCodeSpecifications { get; set; }
         public DbSet<Department> Departments { get; set; }
         public DbSet<CollegeDepartment> CollegeDepartments { get; set; }
-
         public DbSet<StaffProfile> StaffProfiles { get; set; }
+        public DbSet<UserMFASetting> UserMFASettings { get; set; }
+
         protected override void OnModelCreating(ModelBuilder builder)
         {
             base.OnModelCreating(builder);
@@ -46,6 +47,7 @@ namespace OnlineEvaluation.Api.Data
             builder.ApplyConfiguration(new DepartmentConfiguration());
             builder.ApplyConfiguration(new CollegeDepartmentConfiguration());
             builder.ApplyConfiguration(new StaffProfileConfiguration());
+            builder.ApplyConfiguration(new UserMFASettingConfiguration());
         }
     }
 

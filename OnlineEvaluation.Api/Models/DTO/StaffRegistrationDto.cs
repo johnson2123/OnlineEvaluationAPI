@@ -17,5 +17,9 @@
         public string HighestQualification { get; set; } = string.Empty;
         public int? ReportsToProfileId { get; set; }
         public string Address { get; set; } = string.Empty;
+
+        public bool IsMfaEnabled { get; set; } = false;
+        public string MFAType { get; set; } = "None"; // "None", "AuthenticatorApp", "Email"
+        public string? SecretKey { get; set; }
     }
 }

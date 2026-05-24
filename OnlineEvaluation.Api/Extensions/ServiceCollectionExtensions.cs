@@ -89,6 +89,7 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<IDepartmentService, DepartmentService>();
             services.AddScoped<ICollegeDepartmentService, CollegeDepartmentService>();
             services.AddScoped<IStaffOnboardingService, StaffOnboardingService>();
+            services.AddScoped<IMfaSecurityService, MfaSecurityService>();
             return services;
         }
     }

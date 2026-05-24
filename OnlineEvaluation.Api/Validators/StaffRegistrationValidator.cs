@@ -47,6 +47,19 @@ namespace OnlineEvaluation.Api.Validators
 
             RuleFor(x => x.Address)
                 .NotEmpty().WithMessage("An address record is required.");
+
+            RuleFor(x => x.IsMfaEnabled)
+                .NotNull();
+
+            RuleFor(x => x.MFAType)
+                .NotEmpty()
+                .Must(type => type == "None" || type == "AuthenticatorApp" || type == "Email")
+                .WithMessage("MFA Type must be either 'None', 'AuthenticatorApp', or 'Email'.");
+
+            RuleFor(x => x.MFAType)
+                .NotEqual("None")
+                .When(x => x.IsMfaEnabled)
+                .WithMessage("Please specify a valid MFA mechanism (AuthenticatorApp or Email) when Multi-Factor is enabled.");
         }
     }
 }

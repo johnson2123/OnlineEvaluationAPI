@@ -25,5 +25,12 @@ namespace OnlineEvaluation.Api.Models.DTO
         // --- Role-based registration ---
         [Required]
         public string Role { get; set; }
+
+        [Required]
+        public bool IsMfaEnabled { get; set; } = false;
+        [Required]
+        [RegularExpression("^(None|AuthenticatorApp|Email)$", ErrorMessage = "Invalid MFA Type selected.")]
+        public string MFAType { get; set; } = "None"; // "None", "AuthenticatorApp", "Email"
+        public string? SecretKey { get; set; }
     }
 }
