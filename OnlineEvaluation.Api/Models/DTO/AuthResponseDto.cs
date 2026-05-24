@@ -10,5 +10,9 @@
         public bool IsMfaRequired { get; set; }
         public string? PreAuthToken { get; set; } 
         public string? MfaType { get; set; }
+
+        public bool RequiresMfaSetup { get; set; }
+        public string? QrCodeBase64 { get; set; }
+        public string? SharedSecret { get; set; }
     }
 }

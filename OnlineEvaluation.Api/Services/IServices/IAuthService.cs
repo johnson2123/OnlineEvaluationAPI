@@ -12,7 +12,8 @@ namespace OnlineEvaluation.Api.Services.IServices
         Task<bool> ConfirmEmailAsync(string userId, string token);
         Task<bool> ForgotPasswordAsync(string email);
         Task<bool> ResetPasswordAsync(ResetPasswordDto dto);
-        Task<IdentityResult> ChangeInitialPasswordAsync(ChangeInitialPasswordDto dto);
+        Task<SetupMfaResponse> ChangeInitialPasswordAsync(ChangeInitialPasswordDto dto);
+        Task ActivateMfaAsync(string userId);
 
         string ValidatePreAuthToken(string preAuthToken);
         Task<AuthResponseDto> GenerateFinalLoginTokensAsync(string userId);

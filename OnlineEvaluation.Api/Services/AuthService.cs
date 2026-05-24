@@ -175,19 +175,54 @@ namespace OnlineEvaluation.Api.Services
             var mfaSetting = await _db.Set<UserMFASetting>()
                 .FirstOrDefaultAsync(m => m.ApplicationUserId == user.Id);
 
-            if (mfaSetting != null && mfaSetting.IsMFAEnabled)
+            if (mfaSetting != null)
             {
-                var preAuthToken = _tokenService.GeneratePreAuthToken(user);
-
-                return new AuthResponseDto
+                // CASE A: Standard Daily Login (MFA is fully verified and enabled)
+                if (mfaSetting.IsMFAEnabled)
                 {
-                    RequiresPasswordChange = false,
-                    IsMfaRequired = true,
-                    PreAuthToken = preAuthToken.Token,
-                    MfaType = mfaSetting.MFAType
-                };
+                    var preAuthToken = _tokenService.GeneratePreAuthToken(user);
+
+                    return new AuthResponseDto
+                    {
+                        RequiresPasswordChange = false,
+                        IsMfaRequired = true,
+                        RequiresMfaSetup = false,
+                        PreAuthToken = preAuthToken.Token,
+                        MfaType = mfaSetting.MFAType
+                    };
+                }
+
+                if (!mfaSetting.IsMFAEnabled && !string.IsNullOrEmpty(mfaSetting.SecretKey))
+                {
+                    var freshPreAuthToken = _tokenService.GeneratePreAuthToken(user);
+
+                    string keyUri = _mfaSecurity.GenerateQrCodeUri(user.Email!, mfaSetting.SecretKey);
+                    string base64Image = "";
+
+                    // Re-render the visual QR code byte stream from the existing key
+                    using (var qrGenerator = new QRCoder.QRCodeGenerator())
+                    using (var qrCodeData = qrGenerator.CreateQrCode(keyUri, QRCoder.QRCodeGenerator.ECCLevel.Q))
+                    using (var qrCode = new QRCoder.PngByteQRCode(qrCodeData))
+                    {
+                        byte[] qrCodeBytes = qrCode.GetGraphic(20);
+                        base64Image = $"data:image/png;base64,{Convert.ToBase64String(qrCodeBytes)}";
+                    }
+
+                    return new AuthResponseDto
+                    {
+                        RequiresPasswordChange = false,
+                        IsMfaRequired = false,
+                        RequiresMfaSetup = true,
+                        PreAuthToken = freshPreAuthToken.Token,
+                        QrCodeBase64 = base64Image,
+                        SharedSecret = mfaSetting.SecretKey,
+                        MfaType = mfaSetting.MFAType
+                    };
+                }
+
             }
-            return await GenerateFinalLoginTokensAsync(user.Id);
+
+                return await GenerateFinalLoginTokensAsync(user.Id);
         }
 
         public async Task<AuthResponseDto> GenerateFinalLoginTokensAsync(string userId)
@@ -317,28 +352,103 @@ namespace OnlineEvaluation.Api.Services
             return true;
         }
 
-        public async Task<IdentityResult> ChangeInitialPasswordAsync(ChangeInitialPasswordDto dto)
+        public async Task<SetupMfaResponse> ChangeInitialPasswordAsync(ChangeInitialPasswordDto dto)
         {
             var user = await _userManager.FindByEmailAsync(dto.Email);
             if (user == null)
-                return IdentityResult.Failed(new IdentityError { Description = "User context not found." });
+                return new SetupMfaResponse { Succeeded = false, Errors = new[] { "User context not found." } };
 
             if (!user.MustChangePassword)
             {
-                return IdentityResult.Failed(new IdentityError { Description = "Initial setup already completed." });
+                return new SetupMfaResponse { Succeeded = false, Errors = new[] { "Initial setup already completed." } };
             }
 
             var result = await _userManager.ChangePasswordAsync(user, dto.CurrentPassword, dto.NewPassword);
 
-            if (result.Succeeded)
+            if (!result.Succeeded)
             {
-                user.MustChangePassword = false;
-                user.IsActive = true;
-
-                await _userManager.UpdateAsync(user);
+                return new SetupMfaResponse
+                {
+                    Succeeded = false,
+                    Errors = result.Errors.Select(e => e.Description)
+                };
             }
 
-            return result;
+            user.MustChangePassword = false;
+            user.IsActive = true;
+            await _userManager.UpdateAsync(user);
+
+            var mfaSetting = await _db.UserMFASettings
+                                    .FirstOrDefaultAsync(m => m.ApplicationUserId == user.Id);
+
+            var roles = await _userManager.GetRolesAsync(user);
+            bool isMfaMandatoryRole = roles.Contains("Admin") ||
+                                      roles.Contains("Controller") ||
+                                      roles.Contains("Faculty") ||
+                                      roles.Contains("Moderator");
+
+            if (isMfaMandatoryRole)
+            {
+                string randomSecret = _mfaSecurity.GenerateRandomSecretKey();
+                var backupCodesList = _mfaSecurity.GenerateBackupCodes();
+
+                if (mfaSetting == null)
+                {
+                    mfaSetting = new UserMFASetting
+                    {
+                        ApplicationUserId = user.Id,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    await _db.UserMFASettings.AddAsync(mfaSetting);
+                }
+
+                mfaSetting.MFAType = "AuthenticatorApp";
+                mfaSetting.IsMFAEnabled = false; // Remains false until they complete setup code validation
+                mfaSetting.SecretKey = randomSecret;
+                mfaSetting.BackupCodes = string.Join(",", backupCodesList);
+                mfaSetting.UpdatedAt = DateTime.UtcNow;
+
+                _db.UserMFASettings.Update(mfaSetting);
+                await _db.SaveChangesAsync();
+
+                string keyUri = _mfaSecurity.GenerateQrCodeUri(user.Email!, randomSecret);
+
+                using (var qrGenerator = new QRCoder.QRCodeGenerator())
+                using (var qrCodeData = qrGenerator.CreateQrCode(keyUri, QRCoder.QRCodeGenerator.ECCLevel.Q))
+                using (var qrCode = new QRCoder.PngByteQRCode(qrCodeData))
+                {
+                    byte[] qrCodeBytes = qrCode.GetGraphic(20);
+                    string base64Image = $"data:image/png;base64,{Convert.ToBase64String(qrCodeBytes)}";
+
+                    var preAuthTokenResult = _tokenService.GeneratePreAuthToken(user);
+
+                    return new SetupMfaResponse
+                    {
+                        Succeeded = true,
+                        RequiresMfaSetup = true,
+                        QrCodeBase64 = base64Image,
+                        SharedSecret = randomSecret, // Raw key for user string fallbacks
+                        PreAuthToken = preAuthTokenResult.Token
+                    };
+                }
+            }
+
+            return new SetupMfaResponse { Succeeded = true, RequiresMfaSetup = false };
+        }
+
+        public async Task ActivateMfaAsync(string userId)
+        {
+            var mfaSetting = await _db.UserMFASettings
+                                    .FirstOrDefaultAsync(m => m.ApplicationUserId == userId);
+
+            if (mfaSetting != null && !mfaSetting.IsMFAEnabled)
+            {
+                mfaSetting.IsMFAEnabled = true;
+                mfaSetting.UpdatedAt = DateTime.UtcNow;
+
+                _db.UserMFASettings.Update(mfaSetting);
+                await _db.SaveChangesAsync();
+            }
         }
 
         public Task<bool> ConfirmEmailAsync(string userId, string token)
@@ -359,8 +469,6 @@ namespace OnlineEvaluation.Api.Services
             // Implementation Pending
             return Task.FromResult(false);
         }
-
-        
 
         
     }

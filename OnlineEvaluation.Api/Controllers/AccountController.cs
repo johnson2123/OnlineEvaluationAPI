@@ -62,14 +62,14 @@ namespace OnlineEvaluation.Api.Controllers
                     });
                 }
 
+                if (authResponse.RequiresMfaSetup)
+                {
+                    return Accepted(authResponse); 
+                }
+
                 if (authResponse.IsMfaRequired)
                 {
-                    return Accepted(new
-                    {
-                        isMfaRequired = true,
-                        preAuthToken = authResponse.PreAuthToken,
-                        message = "MFA verification required."
-                    });
+                    return Accepted(authResponse); 
                 }
 
                 if (string.IsNullOrEmpty(authResponse.RefreshToken))
@@ -100,24 +100,26 @@ namespace OnlineEvaluation.Api.Controllers
             try
             {
                 var userId = _auth.ValidatePreAuthToken(dto.PreAuthToken);
+
                 if (string.IsNullOrEmpty(userId))
                 {
                     return Unauthorized(new { error = "Session expired or invalid. Please re-enter your password." });
                 }
 
-              
                 var userSecretKey = await _auth.GetUserMfaSecretKeyAsync(userId);
                 if (string.IsNullOrEmpty(userSecretKey))
                 {
                     return BadRequest(new { error = "MFA configuration not found for this account." });
                 }
 
-
                 bool isValid = _mfaSecurity.ValidateAuthenticatorCode(userSecretKey, dto.Code);
                 if (!isValid)
                 {
                     return Unauthorized(new { error = "Invalid verification code. Please try again." });
                 }
+
+                // Activating MFA if it's the user's initial setup phase
+                await _auth.ActivateMfaAsync(userId);
 
                 var finalAuthResponse = await _auth.GenerateFinalLoginTokensAsync(userId);
 
@@ -138,15 +140,39 @@ namespace OnlineEvaluation.Api.Controllers
         [HttpPost("setup-password")]
         public async Task<IActionResult> SetupPassword([FromBody] ChangeInitialPasswordDto dto)
         {
-            var result = await _auth.ChangeInitialPasswordAsync(dto);
+            if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            if (result.Succeeded)
+            try
             {
-                return Ok(new { message = "Account verified and password updated successfully." });
-            }
+                var result = await _auth.ChangeInitialPasswordAsync(dto);
 
-            var errors = result.Errors.Select(e => e.Description);
-            return BadRequest(new { message = "Password update failed", errors });
+                if (!result.Succeeded)
+                {
+                    return BadRequest(new { errors = result.Errors });
+                }
+
+                if (result.RequiresMfaSetup)
+                {
+                    return Ok(new
+                    {
+                        requiresMfaSetup = true,
+                        qrCodeBase64 = result.QrCodeBase64,
+                        sharedSecret = result.SharedSecret,
+                        preAuthToken = result.PreAuthToken,
+                        message = "Password created successfully. Please scan the QR code to set up your Authenticator app."
+                    });
+                }
+
+                return Ok(new
+                {
+                    requiresMfaSetup = false,
+                    message = "Account verified and password updated successfully."
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = $"An internal error occurred: {ex.Message}" });
+            }
         }
 
         [HttpPost("refresh")]
