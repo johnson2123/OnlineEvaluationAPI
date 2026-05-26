@@ -26,11 +26,21 @@ namespace OnlineEvaluation.Api.Data.Configurations
             builder.Property(u => u.WebsiteUrl).HasMaxLength(500);
             builder.Property(u => u.AccreditationBody).HasMaxLength(200);
             builder.Property(u => u.Status).IsRequired().HasMaxLength(50);
+
+            builder.Property(u => u.SubscriptionPlan).HasMaxLength(100);
+            builder.Property(u => u.SubscriptionStatus).HasMaxLength(50);
+            builder.Property(u => u.PlanAmount).HasColumnType("decimal(18,2)");
+            builder.Property(u => u.BillingCycle).HasMaxLength(50);
+            builder.Property(u => u.SubscriptionStartDate);
+            builder.Property(u => u.SubscriptionEndDate);
+
             builder.Property(u => u.IsDeleted).HasDefaultValue(false);
             builder.Property(u => u.CreatedAt).IsRequired();
             builder.Property(u => u.CreatedByUserId).HasMaxLength(450);
             builder.Property(u => u.UpdatedByUserId).HasMaxLength(450);
             builder.Property(u => u.DeletedByUserId).HasMaxLength(450);
+            builder.Property(u => u.RowVersion).IsRowVersion();
+
 
             builder.HasIndex(u => u.Guid)
                    .IsUnique()

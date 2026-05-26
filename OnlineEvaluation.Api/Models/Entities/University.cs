@@ -21,7 +21,14 @@ namespace OnlineEvaluation.Api.Models.Entities
         public string? AccreditationBody { get; set; }
         public string Status { get; set; } = "Active";
 
-        
+        public string? SubscriptionPlan { get; set; }
+        public string? SubscriptionStatus { get; set; }
+        public decimal? PlanAmount { get; set; }
+        public string? BillingCycle { get; set; }
+        public DateTime? SubscriptionStartDate { get; set; }
+        public DateTime? SubscriptionEndDate { get; set; }
+
+
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         public string? CreatedByUserId { get; set; }
 
