@@ -244,6 +244,17 @@ namespace OnlineEvaluation.Api.Services
 
             _db.StudentAcademicRecords.Add(baselineSemesterRecord);
 
+            var studentMfaSetting = new UserMFASetting
+            {
+                ApplicationUserId = coreIdentityAccount.Id,
+                MFAType = dto.MFAType,               
+                IsMFAEnabled = dto.IsMfaEnabled,     
+                SecretKey = null,                    
+                CreatedAt = DateTime.UtcNow
+            };
+
+            _db.UserMFASettings.Add(studentMfaSetting);
+
             return coreIdentityAccount;
         }
     }

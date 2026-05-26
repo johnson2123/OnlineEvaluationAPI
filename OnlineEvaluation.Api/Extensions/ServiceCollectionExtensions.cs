@@ -1,9 +1,10 @@
 ﻿using AutoMapper;
 using FluentValidation;
-using OnlineEvaluation.Api.Validators;
+using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using OnlineEvaluation.Api.Data;
 using OnlineEvaluation.Api.Mappings;
@@ -11,10 +12,10 @@ using OnlineEvaluation.Api.Models;
 using OnlineEvaluation.Api.Seed;
 using OnlineEvaluation.Api.Services;
 using OnlineEvaluation.Api.Services.IServices;
-using System.Text;
-using FluentValidation.AspNetCore;
-using Microsoft.IdentityModel.JsonWebTokens;
+using OnlineEvaluation.Api.Settings;
+using OnlineEvaluation.Api.Validators;
 using System.Security.Claims;
+using System.Text;
 
 namespace OnlineEvaluation.Api.Extensions
 {
@@ -73,6 +74,7 @@ namespace OnlineEvaluation.Api.Extensions
                 };
             });
 
+            services.Configure<EmailSettings>(config.GetSection("EmailSettings"));
             services.AddScoped<ITokenService, TokenService>();
             services.AddScoped<IAuthService, AuthService>();
             services.AddScoped<IEmailService, EmailService>();
@@ -90,6 +92,8 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<ICollegeDepartmentService, CollegeDepartmentService>();
             services.AddScoped<IStaffOnboardingService, StaffOnboardingService>();
             services.AddScoped<IMfaSecurityService, MfaSecurityService>();
+            services.AddScoped<IOtpService, OtpService>();
+            services.AddScoped<IEmailService, EmailService>();
             return services;
         }
     }

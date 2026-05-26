@@ -13,6 +13,7 @@ namespace OnlineEvaluation.Api.Services.IServices
         Task<bool> ForgotPasswordAsync(string email);
         Task<bool> ResetPasswordAsync(ResetPasswordDto dto);
         Task<SetupMfaResponse> ChangeInitialPasswordAsync(ChangeInitialPasswordDto dto);
+        Task<SetupMfaResponse> VerifyMfaOnboardingOtpAsync(VerifyMfaOnboardingOtpDto dto);
         Task ActivateMfaAsync(string userId);
 
         string ValidatePreAuthToken(string preAuthToken);

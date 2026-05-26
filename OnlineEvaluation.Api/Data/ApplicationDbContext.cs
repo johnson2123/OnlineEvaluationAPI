@@ -28,6 +28,7 @@ namespace OnlineEvaluation.Api.Data
         public DbSet<CollegeDepartment> CollegeDepartments { get; set; }
         public DbSet<StaffProfile> StaffProfiles { get; set; }
         public DbSet<UserMFASetting> UserMFASettings { get; set; }
+        public DbSet<OtpLog> OtpLogs { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -48,6 +49,7 @@ namespace OnlineEvaluation.Api.Data
             builder.ApplyConfiguration(new CollegeDepartmentConfiguration());
             builder.ApplyConfiguration(new StaffProfileConfiguration());
             builder.ApplyConfiguration(new UserMFASettingConfiguration());
+            builder.ApplyConfiguration(new OtpLogConfiguration());
         }
     }
 

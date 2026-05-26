@@ -14,5 +14,7 @@
         public string? ContactNumber { get; set; }
         public string? Address { get; set; }
         public string? BloodGroup { get; set; }
+        public bool IsMfaEnabled { get; set; } = true; 
+        public string MFAType { get; set; } = "Email";
     }
 }

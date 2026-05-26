@@ -15,11 +15,14 @@ namespace OnlineEvaluation.Api.Controllers
         private readonly IAuthService _auth;
         private readonly IConfiguration _configuration;
         private readonly IMfaSecurityService _mfaSecurity;
-        public AccountController(IAuthService auth, IConfiguration configuration, IMfaSecurityService mfaSecurity)
+        private readonly IOtpService _otpService;
+
+        public AccountController(IAuthService auth, IConfiguration configuration, IMfaSecurityService mfaSecurity, IOtpService otpService)
         {
             _auth = auth;
             _configuration = configuration;
             _mfaSecurity = mfaSecurity;
+            _otpService = otpService;
         }
 
         [HttpPost("register")]
@@ -64,12 +67,22 @@ namespace OnlineEvaluation.Api.Controllers
 
                 if (authResponse.RequiresMfaSetup)
                 {
-                    return Accepted(authResponse); 
+                    return Accepted(new
+                    {
+                        requiresMfaSetup = true,
+                        preAuthToken = authResponse.PreAuthToken,
+                        message = "MFA Setup has been initialized but is incomplete. Please proceed via setup verification."
+                    });
                 }
 
                 if (authResponse.IsMfaRequired)
                 {
-                    return Accepted(authResponse); 
+                    return Accepted(new
+                    {
+                        isMfaRequired = true,
+                        preAuthToken = authResponse.PreAuthToken,
+                        message = "MFA code verification required."
+                    });
                 }
 
                 if (string.IsNullOrEmpty(authResponse.RefreshToken))
@@ -137,6 +150,49 @@ namespace OnlineEvaluation.Api.Controllers
             }
         }
 
+        [AllowAnonymous]
+        [HttpPost("verify-email-otp")]
+        public async Task<IActionResult> VerifyEmailOtp([FromBody] MfaVerificationDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var userId = _auth.ValidatePreAuthToken(dto.PreAuthToken);
+
+                if (string.IsNullOrEmpty(userId))
+                {
+                    return Unauthorized(new { error = "Session expired or token invalid. Please log in again." });
+                }
+
+                bool isOtpValid = await _otpService.VerifyOtpAsync(userId, dto.Code, "Login");
+
+                if (!isOtpValid)
+                {
+                    return Unauthorized(new { error = "Invalid or expired verification code." });
+                }
+
+                await _auth.ActivateMfaAsync(userId);
+
+                var finalAuthResponse = await _auth.GenerateFinalLoginTokensAsync(userId);
+
+                AppendRefreshTokenCookie(finalAuthResponse.RefreshToken);
+
+                return Ok(new
+                {
+                    accessToken = finalAuthResponse.AccessToken,
+                    expiresAt = finalAuthResponse.AccessTokenExpiresAt
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = "An internal error occurred during email verification." });
+            }
+        }
+
         [HttpPost("setup-password")]
         public async Task<IActionResult> SetupPassword([FromBody] ChangeInitialPasswordDto dto)
         {
@@ -156,10 +212,8 @@ namespace OnlineEvaluation.Api.Controllers
                     return Ok(new
                     {
                         requiresMfaSetup = true,
-                        qrCodeBase64 = result.QrCodeBase64,
-                        sharedSecret = result.SharedSecret,
                         preAuthToken = result.PreAuthToken,
-                        message = "Password created successfully. Please scan the QR code to set up your Authenticator app."
+                        message = "Password updated successfully. A verification code has been sent to your email. Please verify it to view your Authenticator QR Code."
                     });
                 }
 
@@ -174,6 +228,40 @@ namespace OnlineEvaluation.Api.Controllers
                 return StatusCode(500, new { error = $"An internal error occurred: {ex.Message}" });
             }
         }
+
+        [AllowAnonymous]
+        [HttpPost("verify-onboarding-otp")]
+        public async Task<IActionResult> VerifyOnboardingOtp([FromBody] VerifyMfaOnboardingOtpDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                var result = await _auth.VerifyMfaOnboardingOtpAsync(dto);
+
+                if (!result.Succeeded)
+                {
+                    return BadRequest(new { errors = result.Errors });
+                }
+
+                return Ok(new
+                {
+                    requiresMfaSetup = true,
+                    qrCodeBase64 = result.QrCodeBase64,
+                    sharedSecret = result.SharedSecret,
+                    preAuthToken = result.PreAuthToken,
+                    message = "Email verified successfully. Please scan this QR code with an authenticator app like Google Authenticator or Microsoft Authenticator, then enter the device code to activate."
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = $"An unexpected error occurred during OTP onboarding validation: {ex.Message}" });
+            }
+        }
+
 
         [HttpPost("refresh")]
         public async Task<IActionResult> Refresh()
