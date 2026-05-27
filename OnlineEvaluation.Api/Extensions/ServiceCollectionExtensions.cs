@@ -89,12 +89,12 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<IStudentOnboardingService, StudentOnboardingService>();
             services.AddScoped<IExamCodeSpecificationService, ExamCodeSpecificationService>();
             services.AddScoped<IStudentProfileService, StudentProfileService>();
+            services.AddScoped<IStaffProfileService, StaffProfileService>();
             services.AddScoped<IDepartmentService, DepartmentService>();
             services.AddScoped<ICollegeDepartmentService, CollegeDepartmentService>();
             services.AddScoped<IStaffOnboardingService, StaffOnboardingService>();
             services.AddScoped<IMfaSecurityService, MfaSecurityService>();
             services.AddScoped<IOtpService, OtpService>();
-            //services.AddScoped<IEmailService, EmailService>();
             services.AddSingleton<IEmailQueue, BackgroundEmailQueue>();
             services.AddHostedService<EmailWorkerService>();
 

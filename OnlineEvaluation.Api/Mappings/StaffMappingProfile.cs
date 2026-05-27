@@ -64,6 +64,38 @@ namespace OnlineEvaluation.Api.Mappings
                 .ForMember(dest => dest.ReportsToProfileId, opt => opt.MapFrom(src => src.ReportsToProfileId))
                 .ForMember(dest => dest.ReportsToStaffName, opt => opt.MapFrom(src =>
                     src.ReportsToProfile != null ? src.ReportsToProfile.FullName : null));
+
+
+            CreateMap<StaffProfile, StaffProfileDto>()
+                .ForMember(dest => dest.StaffGuid, opt => opt.MapFrom(src => src.StaffGuid))
+                .ForMember(dest => dest.EmployeeId, opt => opt.MapFrom(src => src.EmployeeId))
+
+                .ForMember(dest => dest.Email, opt => opt.MapFrom(src =>
+                    src.ApplicationUser != null ? src.ApplicationUser.Email : string.Empty))
+                .ForMember(dest => dest.FirstName, opt => opt.MapFrom(src =>
+                    src.ApplicationUser != null ? src.ApplicationUser.FirstName : string.Empty))
+                .ForMember(dest => dest.LastName, opt => opt.MapFrom(src =>
+                    src.ApplicationUser != null ? src.ApplicationUser.LastName : string.Empty))
+                .ForMember(dest => dest.FullName, opt => opt.MapFrom(src => src.FullName))
+
+                .ForMember(dest => dest.DepartmentName, opt => opt.MapFrom(src =>
+                    src.CollegeDepartment != null && src.CollegeDepartment.Department != null
+                        ? src.CollegeDepartment.Department.Name
+                        : string.Empty))
+
+                .ForMember(dest => dest.CollegeName, opt => opt.MapFrom(src =>
+                    src.CollegeDepartment != null && src.CollegeDepartment.College != null
+                        ? src.CollegeDepartment.College.Name
+                        : string.Empty))
+
+                .ForMember(dest => dest.Role, opt => opt.MapFrom(src => src.Role))
+                .ForMember(dest => dest.Designation, opt => opt.MapFrom(src => src.Designation))
+                .ForMember(dest => dest.Gender, opt => opt.MapFrom(src => src.Gender))
+                .ForMember(dest => dest.HighestQualification, opt => opt.MapFrom(src => src.HighestQualification))
+                .ForMember(dest => dest.IsPermanent, opt => opt.MapFrom(src => src.IsPermanent))
+
+                .ForMember(dest => dest.PhoneNumber, opt => opt.MapFrom(src => src.PhoneNumber))
+                .ForMember(dest => dest.Address, opt => opt.MapFrom(src => src.Address));
         }
     }
 }
