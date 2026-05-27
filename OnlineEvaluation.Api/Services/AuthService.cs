@@ -5,6 +5,7 @@ using OnlineEvaluation.Api.Data;
 using OnlineEvaluation.Api.Models;
 using OnlineEvaluation.Api.Models.DTO;
 using OnlineEvaluation.Api.Models.Entities;
+using OnlineEvaluation.Api.Services.Background;
 using OnlineEvaluation.Api.Services.Helpers;
 using OnlineEvaluation.Api.Services.IServices;
 
@@ -18,7 +19,7 @@ namespace OnlineEvaluation.Api.Services
         private readonly IMfaSecurityService _mfaSecurity;
         private readonly IOtpService _otpService;
         private readonly ApplicationDbContext _db;
-        private readonly IEmailService _emailService;
+        private readonly IEmailQueue _emailQueue;
         private readonly IConfiguration _config;
         private readonly string _refreshTokenHashKey;
 
@@ -27,7 +28,7 @@ namespace OnlineEvaluation.Api.Services
             RoleManager<IdentityRole> roleManager,
             ITokenService tokenService,
             ApplicationDbContext db,
-            IEmailService emailService,
+            IEmailQueue emailQueue,
             IConfiguration config,
             IMfaSecurityService mfaSecurity,
             IOtpService otpService)
@@ -36,7 +37,7 @@ namespace OnlineEvaluation.Api.Services
             _roleManager = roleManager;
             _tokenService = tokenService;
             _db = db;
-            _emailService = emailService;
+            _emailQueue = emailQueue;
             _config = config;
             _mfaSecurity = mfaSecurity;
             _otpService = otpService;
@@ -635,7 +636,12 @@ namespace OnlineEvaluation.Api.Services
                     <p style='font-size: 13px; color: #718096;'>This challenge token will expire in 5 minutes. If you did not make this request, please change your credentials immediately.</p>
                 </div>";
 
-            await _emailService.SendEmailAsync(email, subject, body);
+            await _emailQueue.QueueEmailAsync(new EmailJob
+            {
+                ToEmail = email,
+                Subject = subject,
+                Body = body
+            });
         }
 
 

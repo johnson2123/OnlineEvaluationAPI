@@ -11,6 +11,7 @@ using OnlineEvaluation.Api.Mappings;
 using OnlineEvaluation.Api.Models;
 using OnlineEvaluation.Api.Seed;
 using OnlineEvaluation.Api.Services;
+using OnlineEvaluation.Api.Services.Background;
 using OnlineEvaluation.Api.Services.IServices;
 using OnlineEvaluation.Api.Settings;
 using OnlineEvaluation.Api.Validators;
@@ -93,7 +94,12 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<IStaffOnboardingService, StaffOnboardingService>();
             services.AddScoped<IMfaSecurityService, MfaSecurityService>();
             services.AddScoped<IOtpService, OtpService>();
-            services.AddScoped<IEmailService, EmailService>();
+            //services.AddScoped<IEmailService, EmailService>();
+            services.AddSingleton<IEmailQueue, BackgroundEmailQueue>();
+            services.AddHostedService<EmailWorkerService>();
+
+
+
             return services;
         }
     }
