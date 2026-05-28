@@ -51,7 +51,7 @@ namespace OnlineEvaluation.Api.Services
                 return false;
             }
 
-            if (latestOtpLog.AttemptCount >= 3)
+            if (latestOtpLog.AttemptCount >= 5)
             {
                 return false;
             }

@@ -29,6 +29,8 @@ namespace OnlineEvaluation.Api.Data
         public DbSet<StaffProfile> StaffProfiles { get; set; }
         public DbSet<UserMFASetting> UserMFASettings { get; set; }
         public DbSet<OtpLog> OtpLogs { get; set; }
+        public DbSet<AccountLock> AccountLocks { get; set; }
+        public DbSet<LoginAudit> LoginAudits { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {
@@ -50,6 +52,8 @@ namespace OnlineEvaluation.Api.Data
             builder.ApplyConfiguration(new StaffProfileConfiguration());
             builder.ApplyConfiguration(new UserMFASettingConfiguration());
             builder.ApplyConfiguration(new OtpLogConfiguration());
+            builder.ApplyConfiguration(new AccountLockConfiguration());
+            builder.ApplyConfiguration(new LoginAuditConfiguration());
         }
     }
 

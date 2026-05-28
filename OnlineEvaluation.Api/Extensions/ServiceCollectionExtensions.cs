@@ -97,7 +97,8 @@ namespace OnlineEvaluation.Api.Extensions
             services.AddScoped<IOtpService, OtpService>();
             services.AddSingleton<IEmailQueue, BackgroundEmailQueue>();
             services.AddHostedService<EmailWorkerService>();
-
+            services.AddScoped<IAccountLockService, AccountLockService>();
+            services.AddScoped<ILoginAuditService, LoginAuditService>();
 
 
             return services;

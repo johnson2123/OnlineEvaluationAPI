@@ -14,15 +14,11 @@ namespace OnlineEvaluation.Api.Controllers
     {
         private readonly IAuthService _auth;
         private readonly IConfiguration _configuration;
-        private readonly IMfaSecurityService _mfaSecurity;
-        private readonly IOtpService _otpService;
 
-        public AccountController(IAuthService auth, IConfiguration configuration, IMfaSecurityService mfaSecurity, IOtpService otpService)
+        public AccountController(IAuthService auth, IConfiguration configuration)
         {
             _auth = auth;
             _configuration = configuration;
-            _mfaSecurity = mfaSecurity;
-            _otpService = otpService;
         }
 
         [HttpPost("register")]
@@ -54,7 +50,8 @@ namespace OnlineEvaluation.Api.Controllers
             }
             try
             {
-                var authResponse = await _auth.LoginAsync(dto);
+                var clientMetadata = GetClientMetadata();
+                var authResponse = await _auth.LoginAsync(dto, clientMetadata);
 
                 if (authResponse.RequiresPasswordChange)
                 {
@@ -113,28 +110,21 @@ namespace OnlineEvaluation.Api.Controllers
             try
             {
                 var userId = _auth.ValidatePreAuthToken(dto.PreAuthToken);
-
                 if (string.IsNullOrEmpty(userId))
                 {
                     return Unauthorized(new { error = "Session expired or invalid. Please re-enter your password." });
                 }
 
-                var userSecretKey = await _auth.GetUserMfaSecretKeyAsync(userId);
-                if (string.IsNullOrEmpty(userSecretKey))
-                {
-                    return BadRequest(new { error = "MFA configuration not found for this account." });
-                }
-
-                bool isValid = _mfaSecurity.ValidateAuthenticatorCode(userSecretKey, dto.Code);
+                bool isValid = await _auth.VerifyAndTrackMfaAppCodeAsync(userId, dto.Code);
                 if (!isValid)
                 {
-                    return Unauthorized(new { error = "Invalid verification code. Please try again." });
+                    return Unauthorized(new { error = "Invalid verification code or account is temporarily locked out." });
                 }
 
-                // Activating MFA if it's the user's initial setup phase
                 await _auth.ActivateMfaAsync(userId);
 
-                var finalAuthResponse = await _auth.GenerateFinalLoginTokensAsync(userId);
+                var clientMetadata = GetClientMetadata();
+                var finalAuthResponse = await _auth.GenerateFinalLoginTokensAsync(userId, clientMetadata);
 
                 AppendRefreshTokenCookie(finalAuthResponse.RefreshToken);
 
@@ -144,7 +134,7 @@ namespace OnlineEvaluation.Api.Controllers
                     expiresAt = finalAuthResponse.AccessTokenExpiresAt
                 });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return StatusCode(500, new { error = "An internal error occurred during verification." });
             }
@@ -154,30 +144,26 @@ namespace OnlineEvaluation.Api.Controllers
         [HttpPost("verify-email-otp")]
         public async Task<IActionResult> VerifyEmailOtp([FromBody] MfaVerificationDto dto)
         {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
+            if (!ModelState.IsValid) return BadRequest(ModelState);
 
             try
             {
                 var userId = _auth.ValidatePreAuthToken(dto.PreAuthToken);
-
                 if (string.IsNullOrEmpty(userId))
                 {
                     return Unauthorized(new { error = "Session expired or token invalid. Please log in again." });
                 }
 
-                bool isOtpValid = await _otpService.VerifyOtpAsync(userId, dto.Code, "Login");
-
+                bool isOtpValid = await _auth.VerifyAndTrackEmailOtpAsync(userId, dto.Code);
                 if (!isOtpValid)
                 {
-                    return Unauthorized(new { error = "Invalid or expired verification code." });
+                    return Unauthorized(new { error = "Invalid/expired verification code or account is temporarily locked out." });
                 }
 
                 await _auth.ActivateMfaAsync(userId);
 
-                var finalAuthResponse = await _auth.GenerateFinalLoginTokensAsync(userId);
+                var clientMetadata = GetClientMetadata();
+                var finalAuthResponse = await _auth.GenerateFinalLoginTokensAsync(userId, clientMetadata);
 
                 AppendRefreshTokenCookie(finalAuthResponse.RefreshToken);
 
@@ -187,12 +173,13 @@ namespace OnlineEvaluation.Api.Controllers
                     expiresAt = finalAuthResponse.AccessTokenExpiresAt
                 });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 return StatusCode(500, new { error = "An internal error occurred during email verification." });
             }
         }
 
+        [AllowAnonymous]
         [HttpPost("setup-password")]
         public async Task<IActionResult> SetupPassword([FromBody] ChangeInitialPasswordDto dto)
         {
@@ -302,6 +289,26 @@ namespace OnlineEvaluation.Api.Controllers
             RemoveRefreshTokenCookie();
 
             return Ok(new { message = "Logged out successfully" });
+        }
+
+        private ClientMetadataDto GetClientMetadata()
+        {
+            string ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
+
+            if (Request.Headers.TryGetValue("X-Forwarded-For", out var forwardedFor))
+            {
+                ipAddress = forwardedFor.ToString().Split(',')[0].Trim();
+            }
+
+            string userAgent = Request.Headers["User-Agent"].ToString() ?? "Unknown";
+
+            return new ClientMetadataDto
+            {
+                IPAddress = ipAddress,
+                BrowserInfo = userAgent,
+                OperatingSystem = "Extracted from User-Agent", 
+                DeviceInfo = "Extracted from User-Agent"
+            };
         }
 
         // NEW: This centralizes the cookie creation logic so Login and Refresh use the exact same settings.

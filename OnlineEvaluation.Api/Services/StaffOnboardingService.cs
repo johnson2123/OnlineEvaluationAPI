@@ -16,20 +16,23 @@ namespace OnlineEvaluation.Api.Services
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IMapper _mapper;
         private readonly ILogger<StaffOnboardingService> _logger;
-        IMfaSecurityService _mfaSecurity;
+        private readonly IMfaSecurityService _mfaSecurity;
+        private readonly IAccountLockService _accountLockService;
 
         public StaffOnboardingService(
             ApplicationDbContext db,
             UserManager<ApplicationUser> userManager,
             IMapper mapper,
             ILogger<StaffOnboardingService> logger,
-            IMfaSecurityService mfaSecurity)
+            IMfaSecurityService mfaSecurity,
+            IAccountLockService accountLockService)
         {
             _db = db;
             _userManager = userManager;
             _mfaSecurity = mfaSecurity;
             _mapper = mapper;
             _logger = logger;
+            _accountLockService = accountLockService;
         }
 
         public async Task<StaffDto> RegisterSingleStaffAsync(StaffRegistrationDto dto, string actorUserId)
@@ -285,6 +288,8 @@ namespace OnlineEvaluation.Api.Services
                 string roleErrors = string.Join(" | ", roleResult.Errors.Select(e => e.Description));
                 throw new InvalidOperationException($"Role assignment failed: {roleErrors}");
             }
+
+            await _accountLockService.InitializeAccountSecurityAsync(coreIdentityAccount.Id);
 
             var mfaSetting = new UserMFASetting
             {

@@ -17,17 +17,20 @@ namespace OnlineEvaluation.Api.Services
         private readonly UserManager<ApplicationUser> _userManager;
         private readonly IMapper _mapper;
         private readonly ILogger<StudentOnboardingService> _logger;
+        private readonly IAccountLockService _accountLockService;
 
         public StudentOnboardingService(
             ApplicationDbContext db,
             UserManager<ApplicationUser> userManager,
             IMapper mapper,
-            ILogger<StudentOnboardingService> logger)
+            ILogger<StudentOnboardingService> logger,
+            IAccountLockService accountLockService)
         {
             _db = db;
             _userManager = userManager;
             _mapper = mapper;
             _logger = logger;
+            _accountLockService = accountLockService;
         }
 
         public async Task<BulkOperationResultDto<BulkRowErrorDto>> RegisterBulkStudentsAsync(
@@ -218,6 +221,8 @@ namespace OnlineEvaluation.Api.Services
                 throw new InvalidOperationException($"Identity Role Assignment Failed: {roleErrors}");
             }
 
+            await _accountLockService.InitializeAccountSecurityAsync(coreIdentityAccount.Id);
+
             var studentDomainModel = _mapper.Map<Student>(dto);
             studentDomainModel.Guid = Guid.NewGuid();
             studentDomainModel.ApplicationUserId = coreIdentityAccount.Id;
@@ -254,6 +259,8 @@ namespace OnlineEvaluation.Api.Services
             };
 
             _db.UserMFASettings.Add(studentMfaSetting);
+
+
 
             return coreIdentityAccount;
         }
