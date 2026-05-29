@@ -163,7 +163,7 @@ namespace OnlineEvaluation.Api.Services
 
             if (user == null) throw new UnauthorizedAccessException("Invalid credentials");
 
-            if (!user.IsActive) throw new UnauthorizedAccessException("User is inactive");
+            if (!user.IsActive) throw new UnauthorizedAccessException("Invalid credentials");
 
             bool isLocked = await _accountLockService.IsAccountLockedAsync(user.Id);
             if (isLocked)
@@ -245,6 +245,21 @@ namespace OnlineEvaluation.Api.Services
             {
                 if (mfaSetting.IsMFAEnabled)
                 {
+                    if (string.IsNullOrEmpty(mfaSetting.MFAType) || mfaSetting.MFAType == "None")
+                    {
+                        await _loginAuditService.LogLoginAttemptAsync(
+                            userId: user.Id,
+                            status: "Failed",
+                            failureReason: "MFA is marked active in database, but no valid delivery vehicle (Email/App) was configured.",
+                            ipAddress: ip,
+                            browserInfo: browser,
+                            osInfo: os,
+                            deviceInfo: device
+                        );
+
+                        throw new UnauthorizedAccessException("Multi-Factor Authentication is not configured correctly on your account. Please contact your Admin / IT Helpdesk.");
+                    }
+
                     var preAuthToken = _tokenService.GeneratePreAuthToken(user);
 
                     if (mfaSetting.MFAType == "Email")
@@ -275,77 +290,48 @@ namespace OnlineEvaluation.Api.Services
                     };
                 }
 
-                if (!mfaSetting.IsMFAEnabled)
+                if (!mfaSetting.IsMFAEnabled && mfaSetting.MFAType == "AuthenticatorApp")
                 {
-                    if (mfaSetting.MFAType == "AuthenticatorApp" && !string.IsNullOrEmpty(mfaSetting.SecretKey))
+                    if (string.IsNullOrEmpty(mfaSetting.SecretKey))
                     {
-                        var freshPreAuthToken = _tokenService.GeneratePreAuthToken(user);
-                        string keyUri = _mfaSecurity.GenerateQrCodeUri(user.Email!, mfaSetting.SecretKey);
-                        string base64Image = "";
-
-                        using (var qrGenerator = new QRCoder.QRCodeGenerator())
-                        using (var qrCodeData = qrGenerator.CreateQrCode(keyUri, QRCoder.QRCodeGenerator.ECCLevel.Q))
-                        using (var qrCode = new QRCoder.PngByteQRCode(qrCodeData))
-                        {
-                            byte[] qrCodeBytes = qrCode.GetGraphic(20);
-                            base64Image = $"data:image/png;base64,{Convert.ToBase64String(qrCodeBytes)}";
-                        }
-
-                        await _loginAuditService.LogLoginAttemptAsync(
-                            userId: user.Id, status: "Partial", failureReason: "MFA onboarding configuration setup requested.",
-                            ipAddress: ip, browserInfo: browser, osInfo: os, deviceInfo: device
-                        );
-
-                        return new AuthResponseDto
-                        {
-                            RequiresPasswordChange = false,
-                            IsMfaRequired = false,
-                            RequiresMfaSetup = true,
-                            PreAuthToken = freshPreAuthToken.Token,
-                            QrCodeBase64 = base64Image,
-                            SharedSecret = mfaSetting.SecretKey,
-                            MfaType = mfaSetting.MFAType
-                        };
+                        mfaSetting.SecretKey = _mfaSecurity.GenerateRandomSecretKey();
+                        var backupCodesList = _mfaSecurity.GenerateBackupCodes();
+                        mfaSetting.BackupCodes = string.Join(",", backupCodesList);
+                        await _db.SaveChangesAsync();
                     }
-                    else if (mfaSetting.MFAType == "AuthenticatorApp")
+
+                    var freshPreAuthToken = _tokenService.GeneratePreAuthToken(user);
+                    string keyUri = _mfaSecurity.GenerateQrCodeUri(user.Email!, mfaSetting.SecretKey);
+                    string base64Image = "";
+
+                    using (var qrGenerator = new QRCoder.QRCodeGenerator())
+                    using (var qrCodeData = qrGenerator.CreateQrCode(keyUri, QRCoder.QRCodeGenerator.ECCLevel.Q))
+                    using (var qrCode = new QRCoder.PngByteQRCode(qrCodeData))
                     {
-                        // Fix: Ensure secret key always exists if onboarding is incomplete
-                        if (string.IsNullOrEmpty(mfaSetting.SecretKey))
-                        {
-                            mfaSetting.SecretKey = _mfaSecurity.GenerateRandomSecretKey();
-                            var backupCodesList = _mfaSecurity.GenerateBackupCodes();
-                            mfaSetting.BackupCodes = string.Join(",", backupCodesList);
-                            await _db.SaveChangesAsync();
-                        }
-
-                        var freshPreAuthToken = _tokenService.GeneratePreAuthToken(user);
-                        string keyUri = _mfaSecurity.GenerateQrCodeUri(user.Email!, mfaSetting.SecretKey);
-                        string base64Image = "";
-
-                        using (var qrGenerator = new QRCoder.QRCodeGenerator())
-                        using (var qrCodeData = qrGenerator.CreateQrCode(keyUri, QRCoder.QRCodeGenerator.ECCLevel.Q))
-                        using (var qrCode = new QRCoder.PngByteQRCode(qrCodeData))
-                        {
-                            byte[] qrCodeBytes = qrCode.GetGraphic(20);
-                            base64Image = $"data:image/png;base64,{Convert.ToBase64String(qrCodeBytes)}";
-                        }
-
-                        await _loginAuditService.LogLoginAttemptAsync(
-                            userId: user.Id, status: "Partial", failureReason: "MFA onboarding initialization requested.",
-                            ipAddress: ip, browserInfo: browser, osInfo: os, deviceInfo: device
-                        );
-
-                        return new AuthResponseDto
-                        {
-                            RequiresPasswordChange = false,
-                            IsMfaRequired = false,
-                            RequiresMfaSetup = true,
-                            PreAuthToken = freshPreAuthToken.Token,
-                            QrCodeBase64 = base64Image,
-                            SharedSecret = mfaSetting.SecretKey,
-                            MfaType = mfaSetting.MFAType
-                        };
+                        byte[] qrCodeBytes = qrCode.GetGraphic(20);
+                        base64Image = $"data:image/png;base64,{Convert.ToBase64String(qrCodeBytes)}";
                     }
+
+                    await _loginAuditService.LogLoginAttemptAsync(
+                        userId: user.Id,
+                        status: "Partial",
+                        failureReason: "MFA onboarding initialization requested.",
+                        ipAddress: ip,
+                        browserInfo: browser,
+                        osInfo: os,
+                        deviceInfo: device
+                    );
+
+                    return new AuthResponseDto
+                    {
+                        RequiresPasswordChange = false,
+                        IsMfaRequired = false,
+                        RequiresMfaSetup = true,
+                        PreAuthToken = freshPreAuthToken.Token,
+                        QrCodeBase64 = base64Image,
+                        SharedSecret = mfaSetting.SecretKey,
+                        MfaType = mfaSetting.MFAType
+                    };
                 }
             }
 
@@ -762,17 +748,146 @@ namespace OnlineEvaluation.Api.Services
             return Task.FromResult(false);
         }
 
-        public Task<bool> ForgotPasswordAsync(string email)
+        public async Task<bool> ForgotPasswordAsync(string email)
         {
-            // Implementation Pending
-            return Task.FromResult(false);
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                return false;
+            }
+
+            var user = await _userManager.FindByEmailAsync(email);
+
+            if (user == null)
+            {
+                return true;
+            }
+
+            string resetToken = await _userManager.GeneratePasswordResetTokenAsync(user);
+
+            string recoveryCallbackUrl = $"http://localhost:5173/reset-password?token={Uri.EscapeDataString(resetToken)}&userId={Uri.EscapeDataString(user.Id)}";
+
+            string mailBody = BuildForgotPasswordEmailBody(user.FirstName, recoveryCallbackUrl);
+
+            try
+            {
+                await _emailQueue.QueueEmailAsync(new EmailJob
+                {
+                    ToEmail = user.Email,
+                    Subject = "DIGITALEVALUATION - Account Password Recovery",
+                    Body = mailBody
+                });
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+
         }
 
-
-        public Task<bool> ResetPasswordAsync(ResetPasswordDto dto)
+        public async Task<bool> ResetPasswordAsync(ResetPasswordDto dto)
         {
-            // Implementation Pending
-            return Task.FromResult(false);
+            if (dto == null || string.IsNullOrWhiteSpace(dto.UserId) || string.IsNullOrWhiteSpace(dto.Token) || string.IsNullOrWhiteSpace(dto.NewPassword))
+            {
+                return false;
+            }
+
+            var user = await _userManager.FindByIdAsync(dto.UserId);
+            if (user == null)
+            {
+                return false;
+            }
+
+            var identityResult = await _userManager.ResetPasswordAsync(user, dto.Token, dto.NewPassword);
+
+            if (!identityResult.Succeeded)
+            {
+                return false;
+            }
+
+            try
+            {
+                await _accountLockService.ResetFailedAttemptsAsync(user.Id);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[PASSWORD RESET CLEANUP EXCEPTION]: Failed to unlock user {user.Id}. Error: {ex.Message}");
+            }
+
+            return true;
+        }
+
+        public async Task<IdentityResult> PasswordChangeAsync(string userId, PasswordChangeDto dto)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                return IdentityResult.Failed(new IdentityError { Description = "User profile context not found." });
+            }
+
+            bool isOtpValid = await _otpService.VerifyOtpAsync(userId, dto.OtpCode, "PasswordChange");
+            if (!isOtpValid)
+            {
+                return IdentityResult.Failed(new IdentityError
+                {
+                    Code = "InvalidOrExpiredOtp",
+                    Description = "The security verification code is incorrect, has expired, or exceeded max attempts."
+                });
+            }
+
+            var result = await _userManager.ChangePasswordAsync(user, dto.CurrentPassword, dto.NewPassword);
+
+            if (result.Succeeded)
+            {
+                Console.WriteLine($"[SECURE PASSWORD ROTATION]: User {user.Id} successfully changed password via implicit JWT validation.");
+            }
+
+            return result;
+        }
+
+        public async Task<bool> SendPasswordChangeOtpAsync(string userId)
+        {
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null || string.IsNullOrEmpty(user.Email)) return false;
+
+            string otpCode = await _otpService.GenerateAndSaveOtpAsync(userId, user.Email, "PasswordChange");
+
+            string emailBody = BuildPasswordChangeOtpEmailBody(user.FullName, otpCode);
+
+            await _emailQueue.QueueEmailAsync(new EmailJob
+            {
+                ToEmail = user.Email,
+                Subject = "OnlineEvaluation - Password Change Verification",
+                Body = emailBody
+            });
+
+            return true;
+        }
+
+        private string BuildPasswordChangeOtpEmailBody(string? fullName, string otpCode)
+        {
+            string greetingName = string.IsNullOrWhiteSpace(fullName) ? "User" : fullName;
+
+            return $@"
+                <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 500px; margin: 0 auto;'>
+                    <h2 style='color: #2b6cb0; margin-top: 0;'>Password Change Verification</h2>
+                    <p>Hello <strong>{greetingName}</strong>,</p>
+                    <p>You have initiated a request to change your account password for the <strong>Online Evaluation System</strong>.</p>
+                    <p>To verify your identity and save your new credentials, please enter the following secure verification code in the password change form:</p>
+        
+                    <div style='text-align: center; margin: 30px 0;'>
+                        <div style='background-color: #f7fafc; border: 1px dashed #cbd5e0; display: inline-block; padding: 15px 40px; font-size: 28px; font-weight: bold; letter-spacing: 4px; color: #2d3748; border-radius: 4px;'>
+                            {otpCode}
+                        </div>
+                    </div>
+        
+                    <p style='font-size: 13px; color: #e53e3e; font-weight: 500;'>
+                        This code will expire in 5 minutes for security purposes.
+                    </p>
+                    <hr style='border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;' />
+                    <p style='font-size: 12px; color: #a0aec0;'>If you did not request this update, someone may be trying to access your account. Please log in immediately, verify your profile security configuration, and consider updating your security stance.</p>
+                </div>";
         }
 
         private async Task SendEmailChallengeAsync(string email, string? firstName, string otpCode)
@@ -797,6 +912,28 @@ namespace OnlineEvaluation.Api.Services
                 Subject = subject,
                 Body = body
             });
+        }
+
+        private string BuildForgotPasswordEmailBody(string firstName, string recoveryCallbackUrl)
+        {
+            string greetingName = string.IsNullOrWhiteSpace(firstName) ? "User" : firstName;
+
+            return $@"
+            <div style='font-family: Arial, sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 500px;'>
+                <h2 style='color: #c53030; margin-top: 0;'>Account Password Recovery</h2>
+                <p>Hello <strong>{greetingName}</strong>,</p>
+                <p>A request was received to reset your password for the Online Evaluation System account.</p>
+                <p>Please click the button below to establish new credentials:</p>
+                <div style='text-align: center; margin: 30px 0;'>
+                    <a href='{recoveryCallbackUrl}' style='background-color: #2b6cb0; color: white; padding: 12px 24px; text-decoration: none; font-weight: bold; border-radius: 4px; display: inline-block;'>Reset My Password</a>
+                </div>
+                <p style='font-size: 13px; color: #718096; line-height: 1.5;'>
+                    If the button above does not work, copy and paste this link into your web browser:<br/>
+                    <a href='{recoveryCallbackUrl}' style='color: #2b6cb0; word-break: break-all;'>{recoveryCallbackUrl}</a>
+                </p>
+                <hr style='border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;' />
+                <p style='font-size: 12px; color: #a0aec0;'>If you did not initiate this request, you can safely ignore this communication. Your password will remain unchanged.</p>
+            </div>";
         }
 
 

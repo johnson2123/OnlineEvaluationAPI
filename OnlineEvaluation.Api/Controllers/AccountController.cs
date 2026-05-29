@@ -74,11 +74,17 @@ namespace OnlineEvaluation.Api.Controllers
 
                 if (authResponse.IsMfaRequired)
                 {
+                    string distinctMessage = authResponse.MfaType switch
+                    {
+                        "Email" => "A secure verification code has been sent to your registered email address.",
+                        "AuthenticatorApp" => "Please enter the active 6-digit code from your Authenticator App.",
+                        _ => "Multi-Factor Authentication code verification is required."
+                    };
                     return Accepted(new
                     {
                         isMfaRequired = true,
                         preAuthToken = authResponse.PreAuthToken,
-                        message = "MFA code verification required."
+                        message = distinctMessage
                     });
                 }
 
@@ -348,10 +354,102 @@ namespace OnlineEvaluation.Api.Controllers
         [HttpPost("confirm-email")]
         public IActionResult ConfirmEmail() => BadRequest(new { error = "Email confirmation disabled in dev." });
 
+        [AllowAnonymous]
         [HttpPost("forgot-password")]
-        public IActionResult ForgotPassword() => BadRequest(new { error = "Forgot password disabled in dev." });
+        public async Task<IActionResult> ForgotPassword([FromBody] ForgotPasswordDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
+            bool isDispatched = await _auth.ForgotPasswordAsync(dto.Email);
+
+            if (!isDispatched)
+            {
+                return StatusCode(500, new
+                {
+                    error = "The system encountered an error while processing your recovery request. Please try again later."
+                });
+            }
+
+            return Ok(new { message = "If the email matches an active account, a password recovery link has been dispatched." });
+        }
+
+        [AllowAnonymous]
         [HttpPost("reset-password")]
-        public IActionResult ResetPassword() => BadRequest(new { error = "Reset password disabled in dev." });
+        public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordDto dto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            try
+            {
+                bool isResetSuccessful = await _auth.ResetPasswordAsync(dto);
+
+                if (!isResetSuccessful)
+                {
+                    return BadRequest(new
+                    {
+                        error = "Unable to reset password. The recovery token may be invalid, expired, or the new password does not meet requirements."
+                    });
+                }
+
+                return Ok(new { message = "Password reset successfully. You may now log in with your new credentials." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = $"An internal server error occurred while processing your request: {ex.Message}" });
+            }
+        }
+
+        [HttpPost("request-password-change")]
+        [Authorize]
+        public async Task<IActionResult> RequestPasswordChange()
+        {
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized(new { error = "User identity context could not be parsed from token session." });
+            }
+
+            bool isSent = await _auth.SendPasswordChangeOtpAsync(userId);
+
+            if (!isSent)
+            {
+                return BadRequest(new { error = "Unable to initiate password change. Profile may not have a valid email configured." });
+            }
+
+            return Ok(new { message = "A unique 6-digit security verification code has been forwarded to your registered email." });
+        }
+
+        [HttpPost("password-change")]
+        [Authorize]
+        public async Task<IActionResult> PasswordChange([FromBody] PasswordChangeDto dto)
+        {
+            if (!ModelState.IsValid) return BadRequest(ModelState);
+
+            var userId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
+
+            try
+            {
+                var result = await _auth.PasswordChangeAsync(userId, dto);
+
+                if (!result.Succeeded)
+                {
+                    return BadRequest(new { error = result.Errors.FirstOrDefault()?.Description });
+                }
+
+                return Ok(new { message = "Your account password has been updated successfully." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
     }
 }
